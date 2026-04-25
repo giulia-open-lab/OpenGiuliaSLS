@@ -32,9 +32,16 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
     'sphinx_tabs.tabs',
+    # Markdown support for the user docs in docs/
+    'myst_parser',
     # For generating PDF files
     'sphinx_simplepdf',
 ]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

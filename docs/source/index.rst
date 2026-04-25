@@ -14,6 +14,18 @@ Here are some quick links to get you started:
 
 .. toctree::
    :maxdepth: 2
+   :caption: User guide
+
+   user-index
+   architecture
+   environment-setup
+   models
+   running-giulia
+   channel-generation
+   testing
+
+.. toctree::
+   :maxdepth: 2
    :caption: Basics
 
    quickstart

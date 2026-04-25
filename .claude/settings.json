@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sphinx; print\\(sphinx.__version__\\)\")",
+      "Bash(/c/Users/Matteo/Anaconda3/python -c \"import sphinx, myst_parser; print\\('sphinx', sphinx.__version__\\); print\\('myst_parser', myst_parser.__version__\\)\")",
+      "Bash(/c/Users/Matteo/Anaconda3/python -c \"import sphinx; print\\('sphinx', sphinx.__version__\\)\")",
+      "Bash(/c/Users/Matteo/Anaconda3/python -c ' *)",
+      "Bash(/c/Users/Matteo/Anaconda3/python -m pip install myst-parser)",
+      "Bash(/c/Users/Matteo/Anaconda3/Scripts/sphinx-build -b html -W --keep-going docs/source docs/build/html)",
+      "Bash(/c/Users/Matteo/Anaconda3/Scripts/sphinx-build -b html /c/Users/Matteo/UPV_Matteo/Working_Directory/OpenGiuliaSLS/docs/source /c/Users/Matteo/UPV_Matteo/Working_Directory/OpenGiuliaSLS/docs/build/html)",
+      "Bash(/c/Users/Matteo/Anaconda3/python -m pip install sphinx-tabs sphinx-simplepdf)"
+    ]
+  }
+}
