@@ -1,0 +1,47 @@
+Name,Description,Values Unit Of Measure,Array dtype,Shape
+best_serving_cell_ID_per_ue_based_on_CRS,"ID of the serving cell for each UE, where the selection is based on measurements over the common reference signal (CRS). Used for LTE cells that do not employ massive MIMO arrays. In LTE or NR cells with massive MIMO arrays, this represents an association considering only the antenna gain from a single element, not from the full array.",—,int32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_CRS_coupling_gain_dB,"Coupling gain between the UE and its serving cell based on CRS-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain.",dB,float32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_CRS_distance_3d_m,3D distance between each UE and its serving cell based on CRS-based selection.,m,float32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_CRS_re_noise_per_ue_dBm,"Received noise power per resource element at the UE, typically used in SNR or SINR computations for CRS.",dBm,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_CRS_rsrp_per_ue_dBm,Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving CRS. Reflects the average received power of resource elements carrying such  CRS.,dBm,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+,,,,
+best_serving_cell_ID_per_ue_based_on_SSB,"ID of the serving cell for each UE, where the selection is based on measurements over the synchronization signal block (SSB). Used for LTE and NR cells that employ massive MIMO arrays. In LTE cells, there is only one SSB, which represents the CRS.",—,int32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_SSB_per_ue,"ID of the serving SSB beam (coverage) for each UE, where the selection is based on SSB measurements.",—,int32,"(number_episodes, number_of_steps,  number_of_ues)"
+,,,,
+best_serving_SSB_coupling_gain_dB,"Coupling gain between the UE and its serving cell based on SSB-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain, considering SSB precoding.",dB,float32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_SSB_distance_3d_m,3D distance between each UE and its serving cell based on SSB-based selection.,m,float32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_SSB_re_noise_per_ue_dBm,"Received noise power per resource element at the UE, typically used in SNR or SINR computations for SSB.",dBm,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_SSB_rsrp_per_ue_dBm,Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving SSB. Reflects the average received power of resource elements carrying such SSB.,dBm,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+,,,,
+best_serving_CSI_RS_per_ue,"ID of the serving CSI-RS beam (data channel) for each UE, where the selection is based on CSI-RS measurements.",—,int32,"(number_episodes, number_of_steps,  number_of_ues)"
+best_serving_CSI_RS_rsrp_per_ue_dBm,Reference Signal Received Power (RSRP) measured by each UE from its serving CSI-RS. Reflects the average received power of resource elements carrying such CSI-RS.,dBm,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+effective_CSI_RS_sinr_ue_to_cell_dB,"Effective SINR of each UE with respect to its assigned CSI-RS beam from the serving cell, measured in decibels (dB). Computed using a mapping function (e.g., EESM or MIESM) that aggregates the per-PRB SINRs allocated to the UE by that cell.",dB ,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+,,,,
+ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_Mbps,"Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed using the Shannon capacity formula and the effective SINR over all PRBs assigned to that UE.",Mbps,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_Mbps,"Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed as the sum of the rates of all PRBs assigned to that UE. For each PRB, the rate is calculated using the Shannon capacity formula based on its instantaneous SINR.",Mbps,float64,"(number_episodes, number_of_steps,  number_of_ues)"
+ue_throughput_per_carrier_Mbps,"Downlink throughput achieved by each UE on a given carrier, measured in megabits per second (Mbps). ",Mpbs,float64,"(number_episodes, number_of_steps,  number_of_carriers, number_of_ues)"
+cell_throughput_Mbps,"Total downlink throughput achieved by each cell, measured in megabits per second (Mbps). Represents the aggregated data rate across all scheduled UEs served by that cell.",Mbps,float64,"(number_of_episodes, number_of_steps, number_of_cells)"
+carrier_throughput_Mbps,"Total downlink throughput measured over a specific carrier in megabits per second (Mbps). It reflects the combined data rate across all cells operating on that carrier, including all scheduled UEs.",Mbps,float64,"(number_of_episodes, number_of_steps, number_of_carriers)"
+,,,,
+power_consumption_perRadio_kW,The power consumed by each radio deployed in the network,kW,float64,"(number_of_episodes, number_of_steps, number_of_radio)"
+network_power_consumption_per_radioType_kW,The total power consumed from each different radio type deployed in the netwok,kW,float64,"(numbet_of_episodes, number_of_steps, number_of_RadioType)"
+total_network_power_consumption_kW,The total aggregated power consumed by all base stations of the network.,kW,float64,"(number_of_episodes, number_of_steps)"
+,,,,
+ues_per_cell_based_on_CRS,Number of UEs associated with each cell based on CRS-based selection.,—,int32,"(number_of_episodes, number_of_steps, number_of_cells)"
+ues_per_cell,Number of UEs associated with each cell based on SSB-based selection.,—,int32,"(number_of_episodes, number_of_steps, number_of_cells)"
+ues_per_SSB_beam,Number of UEs associated with each SSB beam based on the corresponding SSB-based selection.,—,int32,"(number_of_episodes, number_of_steps, number_of_ssb_beams)"
+ues_per_CSI_RS_beam,Number of UEs served by each CSI-RS beam based on the corresponding CSI-RS-based selection.,—,int32,"(number_of_episodes, number_of_steps, number_of_csi-rs_beams)"
+,,,,
+cell_activity_per_ue,Binary mask indicating the cells that were actively transmitting from the UE’s perspective at the time it was transmitting or receiving data.,—,bool,"(number_of_episodes, number_of_steps, number_of_ues, number_of_cells)"
+SSB_beam_activity_per_ue,Binary mask indicating the SSB beams that were actively transmitting from the UE’s perspective at the time it performed the SSB measurement. Recall that SSB beams are swept sequentially over time. ,—,bool,"(number_of_episodes, number_of_steps,  number_of_ssb_beams)"
+CSI_RS_beam_activity_per_ue,Binary mask indicating the CSI-RS beams that were actively transmitting from the UE’s perspective at the time it was transmitting or receiving data.,—,bool,"(number_of_episodes, number_of_steps, number_of_csi-rs_beams)"
+,,,,
+CRS_usefulPower_ue_dBm,"Received power of the useful signal from the serving CRS for each UE, measured in decibels-milliwatts (dBm).",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues)"
+CRS_interfPower_ue_dBm,"Total interference power received by each UE over the serving CRS, measured in decibels-milliwatts (dBm).",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues)"
+CRS_RSRP_no_fast_fading_ue_to_cell_dBm,"CRS RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for evaluating long-term signal strength and planning.",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues, number_of_cells)"
+CRS_sinr_ue_to_cell_dB,"SINR of the CRS measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful CRS power to interference plus noise.",dB,float64,"(number_of_episodes, number_of_steps, number_of_ues)"
+,,,,
+SSB_usefulPower_ue_dBm,"Received power of the useful signal from the serving SSB beam for each UE, measured in decibels-milliwatts (dBm).",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues)"
+SSB_interfPower_ue_dBm,"Total interference power received by each UE over the serving SSB beam, measured in decibels-milliwatts (dBm).",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues)"
+SSB_RSRP_no_fast_fading_ue_to_cell_dBm,"SSB RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for long-term signal quality evaluation and planning.",dBm,float64,"(number_of_episodes, number_of_steps, number_of_ues, number_of_cells)"
+SSB_sinr_ue_to_cell_dB,"SINR of the SSB signal measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful signal power to interference plus noise.",dB ,float64,"(number_of_episodes, number_of_steps, number_of_ues)"

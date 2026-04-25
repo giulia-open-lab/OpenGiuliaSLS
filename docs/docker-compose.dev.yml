@@ -1,0 +1,8 @@
+services:
+  web:
+    image: httpd:alpine
+    container_name: giulia-web
+    volumes:
+      - ./build/html:/usr/local/apache2/htdocs/:ro
+    ports:
+      - "1080:80"

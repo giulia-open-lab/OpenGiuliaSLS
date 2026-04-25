@@ -1,0 +1,21 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Documentation - Build HTML",
+            "type": "shell",
+            "command": "make -C docs html",
+            "group": "build",
+            "icon": {"id": "archive"}
+        },
+        {
+            "label": "Documentation - Run Development",
+            "type": "shell",
+            "command": "docker compose -f ${workspaceFolder}/docs/docker-compose.dev.yml up",
+            "group": "none",
+            "icon": {"id": "run"}
+        }
+    ]
+}

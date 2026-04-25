@@ -1,0 +1,13 @@
+services:
+  web:
+    image: iteamupv/giulia:latest
+    container_name: giulia-web
+    networks:
+      - default
+    # DO NOT EXPORT PORTS IN PRODUCTION, USE A REVERSE PROXY INSTEAD
+    # ports:
+    #   - "8080:80"
+
+networks:
+  default:
+    name: giulia-network

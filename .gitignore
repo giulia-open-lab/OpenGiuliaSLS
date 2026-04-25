@@ -1,0 +1,19 @@
+**pycache**
+# Generated results
+/outputs/
+# Large pre-calculated mat files
+*.mat
+# Precomputed test results
+regression_test_dlp
+# Numpy data
+*.npz
+# Downloaded aux files
+shadowing.zip
+precomputed_files.zip
+
+# Custom configuration files
+config.yml
+
+# Local files
+/local_files
+ground_grid_heatmap*

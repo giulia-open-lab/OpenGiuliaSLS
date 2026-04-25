@@ -1,0 +1,14 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: giulia-web
+    networks:
+      - default
+    ports:
+      - "8080:80"
+
+networks:
+  default:
+    name: giulia-network

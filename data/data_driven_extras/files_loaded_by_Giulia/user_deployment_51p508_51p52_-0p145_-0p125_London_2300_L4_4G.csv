@@ -1,0 +1,2 @@
+grid_resol_m,scenario_x_side_length_m,scenario_y_side_length_m,scenario_lower_left_conner_x_m,scenario_lower_left_conner_y_m,dl_carrier_frequency_GHz,ul_carrier_frequency_GHz
+10,982.0,949.0,528888.0,180520.0,2.3,2.3

@@ -1,0 +1,28 @@
+[project]
+name = "giulia"
+dynamic = ["dependencies", "optional-dependencies"]
+version = "0.0.1"
+authors = [
+    { name="David López Pérez", email="d.lopez@itea.upv.es" },
+]
+description = " Data-driven system level simulator"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/david-lopez-perez/Giulia"
+Issues = "https://github.com/david-lopez-perez/Giulia/issues"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = ["requirements-dev.txt"] }
