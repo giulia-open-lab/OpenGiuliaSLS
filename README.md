@@ -78,7 +78,7 @@ In this mode the YAML config is **not** consulted. Configuration comes entirely 
 To run a different scenario or override any other default, pass the corresponding flag, e.g.:
 
 ```shell
-python examples/giulia_EV.py --scenario_model 3GPPTR38_901_UMa --snapshots 10
+python examples/giulia_EV.py --scenario_model 3GPPTR38_901_5G --ue_distribution uniform --snapshots 10
 ```
 
 For driving several scenarios in a row, see [`examples/giulia_EV_batch.py`](examples/giulia_EV_batch.py), which imports `giulia_EV` and calls its `main(args)` once per scenario.

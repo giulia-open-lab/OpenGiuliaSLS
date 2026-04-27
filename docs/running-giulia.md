@@ -92,7 +92,7 @@ Regression and unit tests have their own guide. See [Testing](testing.md) for ho
 
 ## Customizing base station parameters per scenario
 
-The YAML config lets you pick **which** scenario to run (e.g. `ITU_R_M2135_UMa`, `3GPPTR38_901_UMa_C2`). It does **not** expose the per-scenario base-station parameters: things like
+The YAML config lets you pick **which** scenario to run (e.g. `ITU_R_M2135_UMa`, `3GPPTR38_901_5G`). It does **not** expose the per-scenario base-station parameters: things like
 
 - BS antenna height (`bs_antenna_height_m`),
 - sector bearings (`sector_bearing_deg`),
@@ -108,7 +108,7 @@ are hard-coded inside `giulia/bs/bs_deployments.py`. The `Network.process()` met
 construct_scenario_<scenario_model>
 ```
 
-For example, `construct_scenario_ITU_R_M2135_UMa`, `construct_scenario_3GPPTR38_901_UMa_C2`, `construct_scenario_3GPPTR38_901_UMi_lsc`, `construct_scenario_3GPPTR36_777_UMa_AV`, and so on for every `scenario_model` value listed in [Models](models.md).
+For example, `construct_scenario_ITU_R_M2135_UMa`, `construct_scenario_3GPPTR38_901_5G`, `construct_scenario_3GPPTR38_901_UMi_lsc`, `construct_scenario_3GPPTR36_777_UMa_AV`, and so on for every `scenario_model` value listed in [Models](models.md).
 
 To change the base-station configuration for a given scenario:
 
