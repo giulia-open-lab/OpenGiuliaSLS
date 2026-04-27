@@ -62,7 +62,7 @@ def inputs(args: List[str]) -> Tuple[str, str, str, str, str, str, bool, int, in
     parser = argparse.ArgumentParser(description="Giulia Simulation Configuration")
     
     # Simulation preset
-    parser.add_argument("--preset", type=str, default="GiuliaStd",
+    parser.add_argument("--preset", type=str, default="GiuliaMfl",
                         help="Simulation preset:\n"
                              "  - 'GiuliaStd': Standard simulation\n"
                              "  - 'GiuliaMfl': Multi-frequency layer simulation")

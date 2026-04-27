@@ -51,8 +51,54 @@ If you want to set a custom file, specify its full path in the command, for exam
 python main.py config.example.yml
 ```
 
+### Running examples directly (batches and scripts)
+
+If instead you are interested in reproducing batch runs or scripts directly — for example to drive several scenarios from Python without going through the YAML config — run the example script directly:
+
+```shell
+python examples/giulia_EV.py
+```
+
+In this mode the YAML config is **not** consulted. Configuration comes entirely from command-line flags and the parser defaults defined in [`examples/giulia_EV.py`](examples/giulia_EV.py). Running it with no flags starts a simulation with the following defaults:
+
+- `preset`: `GiuliaStd`
+- `scenario_model`: `ITU_R_M2135_UMa`
+- `ue_playground_model`: `None` (uses the scenario's default playground)
+- `ue_distribution`: `uniform`
+- `ue_mobility`: `None` (static UEs)
+- `link_direction`: `downlink`
+- `wraparound`: `None`
+- `snapshots`: `2`
+- `enable_GPU`: `True`
+- `regression`: `False`
+- `log_level`: `0`
+- `save_results`: `1`
+- `plots`: `True`
+
+To run a different scenario or override any other default, pass the corresponding flag, e.g.:
+
+```shell
+python examples/giulia_EV.py --scenario_model 3GPPTR38_901_UMa --snapshots 10
+```
+
+For driving several scenarios in a row, see [`examples/giulia_EV_batch.py`](examples/giulia_EV_batch.py), which imports `giulia_EV` and calls its `main(args)` once per scenario.
+
+#### Multilayer scenario naming convention
+
+In the multilayer scenario names under `3GPPTR38_901_*_multilayer`, the underscores are meaningful:
+
+- `4G5G` (no underscore between layers) — the listed layers are **colocated** at the same sites.
+- `4G_5G` (underscore between layers) — the listed layers are **non-colocated**; in this case the 5G layer is deployed on the UMi scenario.
+
+The same logic applies to the 6G variants:
+
+- `3GPPTR38_901_4G5G_multilayer` — 4G and 5G colocated.
+- `3GPPTR38_901_4G_5G_multilayer` — 4G and 5G non-colocated, 5G on UMi.
+- `3GPPTR38_901_4G_5G6G_multilayer` — 4G non-colocated from the 5G+6G pair, which is itself colocated.
+- `3GPPTR38_901_4G_5G_6G_multilayer` — 4G, 5G and 6G all non-colocated, with 5G and 6G on their respective UMi scenarios.
+
 ### Running tests
 
 Giulia is tested by running different models and distributions, and comparing them to some precomputed ones.
 
-Know more in the tests guide: [access](./TESTS.md)
+Know more in the tests guide: [access](./docs/testing.md)

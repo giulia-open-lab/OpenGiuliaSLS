@@ -25,13 +25,13 @@ def run_simulations():
         "3GPPTR38_901_5G",
         "3GPPTR38_901_4G5G_multilayer",
         "3GPPTR38_901_4G_5G_multilayer",
-        "3GPPTR38_901_4G_5G2_multilayer",
+        
         "3GPPTR38_901_4G_5G6G_multilayer",
         "3GPPTR38_901_4G_5G_6G_multilayer",
     ]
     
     ue_distributions = [
-        "inhomogeneous_per_cell"
+        "inhomogeneous_per_cell_with_hotspots"
     ]
     
     # Iterate over each scenario and UE distribution
