@@ -63,9 +63,11 @@ class LOSProbability(Saveable):
         self.ue_deployment_obj = ue_deployment_obj
         self.distance_angles_ue_to_cell_obj = distance_angles_ue_to_cell_obj
 
+
     def variables_list(self) -> List[str]:
         """List of attributes name to be saved."""
         return ["los_b_to_a"]
+
 
     def process(self, rescheduling_us=-1):
 
@@ -174,9 +176,7 @@ class LOSProbability(Saveable):
         self.los_b_to_a = self.__assign_los_based_on_plos(self.rng, self.p_los_b_to_a)
 
         # Store in data frames the results as it may be useful to post process
-        self.df_los_b_to_a = pd.DataFrame(self.los_b_to_a, 
-                                        columns=self.network_deployment_obj.df_ep["name"],
-                                        index=self.ue_deployment_obj.df_ep["name"])
+        self.df_los_b_to_a = pd.DataFrame(self.los_b_to_a, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])
 
         ##### Save to plot
         ########################
@@ -209,7 +209,6 @@ class LOSProbability(Saveable):
         # Create number of ues x number of involved cell sites LoS matrix
         rand = rng.rand(size_of_b, number_of_unique_elements_in_a)
         los_b_to_a = rand < p_los_b_to_a[:, indices]
-        # LoS = np.zeros((size_of_B,size_of_unique_A))
 
         # Allocate the respective LoS to every cell - Cells of a cell site have the same LoS
         return los_b_to_a[:, inverse]
@@ -321,19 +320,16 @@ class LOSProbability(Saveable):
         d1 = np.ones((np.size(d_2d_out, 0), np.size(d_2d_out, 1))) * (460 * np.log10(h_ut_mat) - 700)
         d1[d1 < 18] = 18
 
-        # Calculate values for distances smaller than d1 m
-        # mask = np.logical_and( h_ut > 22.5, np.logical_and(h_ut <= 100, d_2D_out <= d1))
-        # P_LoS_for_model[mask] = 1
+        # Calculate values for distances smaller than d1 m 
+        # Note that for distances smaller than d1, p_los = 1 from initialization, so no dedicated mask is needed
 
         # Calculate values for distances larger than d1 m
         mask = np.logical_and(h_ut_mat > 22.5, np.logical_and(h_ut_mat <= 100, d_2d_out > d1))
         p1 = 4300 * np.log10(h_ut_mat[mask]) - 3800
         p_los_b_to_a[mask] = d1[mask] / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / p1) * (1 - d1[mask] / d_2d_out[mask])
 
-        ## AERIAL UEs from 100 to 300m
-
-        # mask = np.logical_and(h_ut > 100, d_2D_out > d1)
-        # P_LoS_for_model[mask] = 1
+        ## AERIAL UEs from 100 to 300m 
+        # For h_ut > 100 m, p_los is defined as 1 in this model and is already preserved by initialization.
 
         return np.round(p_los_b_to_a, 5)
 
@@ -356,11 +352,8 @@ class LOSProbability(Saveable):
         d1 = np.ones((np.size(d_2d_out, 0), np.size(d_2d_out, 1))) * (294.05 * np.log10(h_ut_mat) - 432.94)
         d1[d1 < 18] = 18
 
-        # Calculate values for distances smaller than d1 m
-        # mask = np.logical_and( h_ut > 22.5, np.logical_and(h_ut <= 300, d_2D_out <= d1))
-        # P_LoS_for_model[mask] = 1
-
         # Calculate values for distances larger than d1 m
+        # Note that for distances smaller than d1, p_los = 1 from initialization, so no dedicated mask is needed
         mask = np.logical_and(h_ut_mat > 22.5, np.logical_and(h_ut_mat <= 300, d_2d_out > d1))
         p1 = 233.98 * np.log10(h_ut_mat[mask]) - 0.95
         p_los_b_to_a[mask] = d1[mask] / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / p1) * (1 - d1[mask] / d_2d_out[mask])

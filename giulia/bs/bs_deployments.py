@@ -25,7 +25,7 @@ from giulia.channel import uaearfcn
 from giulia.event_driven.snapshot_control import Snapshot_control
 from giulia.fs import results_file, data_driven_extras
 from giulia.playground import sites
-from giulia.rrc import calculate_tx_power, tools_carrier
+from giulia.rrc import tools_carrier
 from giulia.tools import tools
 from giulia.tools.tools import log_calculations_time, TrackedDataFrame
 from giulia.outputs.saveable import Saveable
@@ -43,12 +43,7 @@ class Network(Saveable):
                  ue_hotspot_deployment_obj):
        
        super().__init__()
-      
-       ##### Plots 
-       ########################
-       self.plot = 0 # Switch to control plots if any
-       
-       
+             
        ##### Input storage
        ########################
        self.simulation_config_obj = simulation_config_obj
@@ -266,14 +261,7 @@ class Network(Saveable):
             np.savez(file,isd_m=self.site_deployment_obj.isd_m,
                      site_names=self.df_ep["site_name"].drop_duplicates().astype(str).to_numpy(),
                      cell_site_positions_m=unique_sites_df[["position_x_m", "position_y_m", "position_z_m"]].astype(np.single).to_numpy()
-            )  
-       
-        
-       ##### Plots 
-       ########################    
-    #    if self.plot == 1:
-    #       plotting.plot_scenario(project_name, site_deployment_obj.isd_m, self.cell_site_positions_m)        
-       
+            )       
        
        ##### End 
        ########################

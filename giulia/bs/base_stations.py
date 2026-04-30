@@ -109,6 +109,7 @@ class BaseStations:
             )
             self.base_stations.append(base_station)
             
+            
     def process(self, rescheduling_us=-1):
         """
         Initializes the functioning of the base station.
