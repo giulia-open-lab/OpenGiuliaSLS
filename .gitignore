@@ -16,4 +16,5 @@ config.yml
 
 # Local files
 /local_files
-ground_grid_heatmap*
+.claude
+.vscode

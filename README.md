@@ -21,6 +21,42 @@ To run the simulator, use the 'main.py' function and select the desired use case
 
 ---
 
+### Cloning the repository
+
+This repo uses [Git LFS](https://git-lfs.com/) to store the precomputed shadowing maps (`*.mat` files under [`shadowing/`](shadowing/)). You must have Git LFS installed **before** cloning, otherwise the `.mat` files will be tiny pointer stubs and the simulator will fail to load them.
+
+1. Install Git LFS (one-time per machine):
+
+   ```shell
+   # Windows (winget) or download from https://git-lfs.com/
+   winget install GitHub.GitLFS
+   # macOS
+   brew install git-lfs
+   # Debian/Ubuntu
+   sudo apt-get install git-lfs
+   ```
+
+   Then enable it for your user:
+
+   ```shell
+   git lfs install
+   ```
+
+2. Clone the repository normally — LFS files are fetched automatically:
+
+   ```shell
+   git clone https://github.com/david-lopez-perez/Giulia.git
+   ```
+
+**Already cloned without LFS?** Run the following from inside the repo to download the real files:
+
+```shell
+git lfs install
+git lfs pull
+```
+
+You can verify the shadowing maps are real (multi-MB) files and not pointer stubs with `git lfs ls-files`.
+
 ### Dependencies
 This simulator is using Sionna by NVIDIA which requires TensorFlow 2.10-2.15 and Python 3.8-3.11. 
 
