@@ -2,7 +2,7 @@
 # Generated results
 /outputs/
 # Large pre-calculated mat files
-*.mat
+# *.mat
 # Precomputed test results
 regression_test_dlp
 # Numpy data
