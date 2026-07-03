@@ -15,6 +15,12 @@ To run the simulator, use the 'main.py' function and select the desired use case
 
 ---
 
+### Acknowledgements
+
+> This work was supported by the Generalitat Valenciana, Spain, through the CIDEGENT PlaGenT, Grant CIDEXG/2022/17, Project iTENTE, and the action CNS2023-144333, financed by MCIN/AEI/10.13039/501100011033 and the European Union ‘NextGenerationEU’/PRTR.
+
+---
+
 ![Attention](https://a11ybadges.com/badge?text=Attention&logo=alert-triangle&badgeColor=rgb(235,180,28))
 
 **Please note that the simulator is currently under construction. We appreciate your patience.**
