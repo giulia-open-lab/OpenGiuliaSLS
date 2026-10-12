@@ -1,0 +1,2 @@
+# make sure schemas are not uploaded
+*.schema.md

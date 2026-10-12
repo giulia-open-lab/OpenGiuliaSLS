@@ -1,1 +1,2 @@
-from giulia.outputs.output_module import OutputModule
+from giulia.outputs.utils import *
+from giulia.outputs.read_outputs import OutputReader

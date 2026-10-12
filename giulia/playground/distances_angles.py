@@ -4,21 +4,16 @@ Created on Tue Mar 21 11:08:30 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import time
-from typing import List
+from typing import List, Dict
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import sklearn.metrics
-from scipy.spatial.distance import cdist
 import torch
 
 from giulia.event_driven.snapshot_control import Snapshot_control
@@ -38,11 +33,13 @@ class Distance_Angles(Saveable):
 
         #### Torch 
         ########################
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
 
         ##### Input storage 
         ######################## 
+        
         self.simulation_config_obj = simulation_config_obj
         self.site_deployment_obj = site_deployment_obj
         self.network_deployment_obj = network_deployment_obj
@@ -53,6 +50,7 @@ class Distance_Angles(Saveable):
         ########################   
         
         # Place holder to store path loss results
+
         self.distances_b_to_a_2d_m = []
         self.distances_b_to_a_3d_m = []
         self.azimuths_b_to_a_degrees = []
@@ -62,10 +60,13 @@ class Distance_Angles(Saveable):
         self.azimuths_b_to_a_wraparound_degrees = []
         self.zeniths_b_to_a_wraparound_degrees = []
                 
-        
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["distances_b_to_a_3d_m"]
+        return []
 
        
     def process(self, rescheduling_us=-1): 
@@ -74,13 +75,16 @@ class Distance_Angles(Saveable):
         ######################## 
         
         # Random numbers
+        
         self.rng = np.random.RandomState(self.simulation_config_obj.random_seed+0)
         
         #Site
+        
         self.hex_layout_tiers = self.site_deployment_obj.hex_layout_tiers
         self.isd_m = self.site_deployment_obj.isd_m
         
         # Network
+        
             ### Please note the abuse of notation - A cell does not really have a position. 
             ### It is the cell site the one that has a position. 
             ### However, we adopt a UE x CELLS structure for convenience in latter operations.
@@ -88,11 +92,13 @@ class Distance_Angles(Saveable):
         self.positions_a_m = self.network_deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)
        
         # UE deployment
+        
         self.positions_b_m = self.ue_deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single) 
        
         
         ##### Start timer
         ########################  
+        
         t_start = time.perf_counter()
         
         
@@ -100,46 +106,52 @@ class Distance_Angles(Saveable):
         ########################          
 
         # Calcualate 2D distances without wraparound. Size b-by-a (UE-by-cell)
+        
         self.distances_b_to_a_2d_m = self.calculate_distances_b_to_a(self.positions_b_m[:,:2], self.positions_a_m[:,:2])      
         
         # Calcualate 3D distances without wraparound. Size b-by-a (UE-by-cell)
+        
         self.distances_b_to_a_3d_m = self.calculate_distances_b_to_a(self.positions_b_m, self.positions_a_m)
 
         # Calcualate azimuths and zeniths without wraparound. Size b-by-a (UE-by-cell)
+        
         self.azimuths_b_to_a_degrees, \
             self.zeniths_b_to_a_degrees \
                 = self.calculate_azimuth_zenith_b_to_a(self.positions_b_m, self.positions_a_m, self.distances_b_to_a_2d_m)
                        
         # Store in data frames as it may be useful to post process
+        
         self.df_distances_b_to_a_2d_m = pd.DataFrame(self.distances_b_to_a_2d_m, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])   
         self.df_distances_b_to_a_3d_m = pd.DataFrame(self.distances_b_to_a_3d_m, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         self.df_azimuths_b_to_a_degrees = pd.DataFrame(self.azimuths_b_to_a_degrees, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         self.df_zeniths_b_to_a_degrees = pd.DataFrame(self.zeniths_b_to_a_degrees, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])                  
 
         # Calcualate 2D and 3D distances as well as azimuths and zeniths with wraparound. Size b-by-a (UE-by-cell)
+            
             # Wraparound only makes sense if we specified tiers and isd_m
-        if self.site_deployment_obj.wraparound == True:
+        if self.site_deployment_obj.wraparound == True: # self.hex_layout_tiers is not None and self.isd_m is not None:
             self.distance_b_to_a_2d_wraparound_m, \
             self.distance_b_to_a_3d_wraparound_m, \
             self.azimuths_b_to_a_wraparound_degrees, \
             self.zeniths_b_to_a_wraparound_degrees \
-                = self.calculate_distances_azimuth_zenith_b_to_a_wraparound(self.positions_b_m, self.positions_a_m, self.hex_layout_tiers, self.isd_m)
+                = self.calcualte_distances_azimuth_zenith_b_to_a_wraparound(self.positions_b_m, self.positions_a_m, self.hex_layout_tiers, self.isd_m)
             
             # Otherwise use distances/angles without wraparound
         else:
-            print("Number of tiers or isd_m are not specified. Cannot use wraparound.")
             self.distance_b_to_a_2d_wraparound_m = self.df_distances_b_to_a_2d_m.values
             self.distance_b_to_a_3d_wraparound_m = self.df_distances_b_to_a_3d_m.values
             self.azimuths_b_to_a_wraparound_degrees = self.df_azimuths_b_to_a_degrees.values
             self.zeniths_b_to_a_wraparound_degrees = self.df_zeniths_b_to_a_degrees.values
 
         # Store in data frames as it may be useful to post process
+        
         self.df_distances_b_to_a_2d_wraparound_m = pd.DataFrame(self.distance_b_to_a_2d_wraparound_m, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])   
         self.df_distances_b_to_a_3d_wraparound_m = pd.DataFrame(self.distance_b_to_a_3d_wraparound_m, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         self.df_azimuths_b_to_a_wraparound_degrees = pd.DataFrame(self.azimuths_b_to_a_wraparound_degrees, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         self.df_zeniths_b_to_a_wraparound_degrees = pd.DataFrame(self.zeniths_b_to_a_wraparound_degrees, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         
         # Calculate 2d_in distance
+        
         if 'indoor' in self.ue_deployment_obj.df_ep.columns:  
             self.d_2D_in_m = np.minimum(25 * self.rng.rand(np.size(self.positions_b_m,0)), 25 * self.rng.rand(np.size(self.positions_b_m,0)))   
             self.indoor = self.ue_deployment_obj.df_ep[["indoor"]].to_numpy(dtype=bool)  
@@ -149,10 +161,12 @@ class Distance_Angles(Saveable):
             
         ##### Save to plot
         ########################
+
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.simulation_config_obj.project_name, 'to_plot_distances_angles')
-            np.savez(file_name,
+            np.savez(
+                file_name,
                 distances_b_to_a_2d_m=self.distances_b_to_a_2d_m,
                 distance_b_to_a_2d_wraparound_m=self.distance_b_to_a_2d_wraparound_m,
                 distances_b_to_a_3d_m=self.distances_b_to_a_3d_m,
@@ -172,20 +186,23 @@ class Distance_Angles(Saveable):
                
             
     def calculate_distances_b_to_a(self, b, a):
-        return (cdist(b, a)).astype(np.single)
-
-
+            
+        return (sklearn.metrics.pairwise_distances(b,a)).astype(np.single)
+      
     def calculate_azimuth_zenith_b_to_a(self, positions_b_m, positions_a_m, distance_2d_m): 
         
         # Calculate deltas
+        
         delta_x_m =  np.subtract.outer(positions_b_m[:,0], positions_a_m[:,0])
         delta_y_m =  np.subtract.outer(positions_b_m[:,1], positions_a_m[:,1])
         delta_z_m =  - np.subtract.outer(positions_b_m[:,2], positions_a_m[:,2]) #Note that the site position height is higher than the UE one
         
         # Calculate azimuth 
+        
         azimuth_degrees = np.degrees(np.arctan2(delta_y_m, delta_x_m))
         
         # Calcualte zenith
+        
         zenith_degrees = np.degrees(np.pi/2 + np.arctan2(delta_z_m, distance_2d_m))
         
         result = azimuth_degrees.astype(np.single), zenith_degrees.astype(np.single)
@@ -196,22 +213,24 @@ class Distance_Angles(Saveable):
     def calculate_azimuth_zenith_b_to_a_torch(self, positions_b_m, positions_a_m, distance_2d_m): 
         
         # Calculate deltas
+        
         delta_x_m = positions_b_m[:,0].unsqueeze(1) - positions_a_m[:,0].unsqueeze(0)
         delta_y_m =  positions_b_m[:,1].unsqueeze(1) - positions_a_m[:,1].unsqueeze(0)
         delta_z_m =  - (positions_b_m[:,2].unsqueeze(1) - positions_a_m[:,2].unsqueeze(0)) #Note that the site position height is higher than the UE one
         
         # Calculate azimuth 
+        
         azimuth_degrees = torch.rad2deg(torch.arctan2(delta_y_m, delta_x_m))
         
         # Calcualte zenith
+        
         zenith_degrees = torch.rad2deg(torch.tensor(np.pi/2, device=self.device)+ torch.arctan2(delta_z_m, distance_2d_m))
         
         result = azimuth_degrees.to(torch.float), zenith_degrees.to(torch.float)
 
         return result
     
-
-    def calculate_distances_azimuth_zenith_b_to_a_wraparound(self, positions_b_m, positions_a_m, tiers, isd_m): 
+    def calcualte_distances_azimuth_zenith_b_to_a_wraparound(self, positions_b_m, positions_a_m, tiers, isd_m): 
         
         positions_b_m = torch.tensor(positions_b_m, device=self.device)
         positions_a_m = torch.tensor(positions_a_m, device=self.device)
@@ -236,83 +255,149 @@ class Distance_Angles(Saveable):
         azimuth_partial_results = torch.ones((7, positions_b_m.size(0), positions_a_m.size(0)), dtype=torch.float, device=self.device)
         zenith_partial_results = torch.ones((7, positions_b_m.size(0), positions_a_m.size(0)), dtype=torch.float, device=self.device)
         
-
         # Calculate the displacement of the cells in positions_a_m with respect to the reference site poistions
 
         # Distance between (x,y) and (a,b);
+            
         distance_3d_partial_results[0,:,:] = torch.cdist(positions_b_m, positions_a_m)
         distance_2d_partial_results[0,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_m[:,:2])
         azimuth_partial_results[0,:,:], \
-            zenith_partial_results[0,:,:]  = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_m,distance_2d_partial_results[0,:,:])            
-
-
+            zenith_partial_results[0,:,:]  = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_m,distance_2d_partial_results[0,:,:])
+        # distance_3d_partial_results[0,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_m + displacement_a_m) 
+        # distance_2d_partial_results[0,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[0,:,:], \
+        #     zenith_partial_results[0,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_m + displacement_a_m, distance_2d_partial_results[0,:,:])            
+            
+            
+            
         # Distance between (x,y) and (a + 3D/sqrt3,b + 4D); 
-        positions_a_aux_m = positions_a_m + torch.tensor([1.5*tiers*isd_m/np.sqrt(3), (1+1.5*tiers)*isd_m, 0], device = self.device) 
+
+        positions_a_aux_m = positions_a_m + torch.tensor([1.5*tiers*isd_m/np.sqrt(3), 
+                                                          (1+1.5*tiers)*isd_m,
+                                                          0], device = self.device) 
         
         distance_3d_partial_results[1,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)
         distance_2d_partial_results[1,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[1,:,:], zenith_partial_results[1,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[1,:,:])            
-
-
+        azimuth_partial_results[1,:,:], zenith_partial_results[1,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[1,:,:] )   
+        # distance_3d_partial_results[1,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[1,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[1,:,:], \
+        #     zenith_partial_results[1,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[1,:,:])           
+            
+            
+            
         # Distance between (x,y) and (a - 3D/sqrt3,b - 4D);
-        positions_a_aux_m = positions_a_m - torch.tensor([1.5*tiers*isd_m/np.sqrt(3), (1+1.5*tiers)*isd_m, 0], device=self.device) 
-
+            
+        positions_a_aux_m = positions_a_m - torch.tensor([1.5*tiers*isd_m/np.sqrt(3), 
+                                                          (1+1.5*tiers)*isd_m,
+                                                          0], device=self.device) 
         distance_3d_partial_results[2,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)
         distance_2d_partial_results[2,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[2,:,:], zenith_partial_results[2,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[2,:,:])
-
-
+        azimuth_partial_results[2,:,:], zenith_partial_results[2,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[2,:,:] )      
+        # distance_3d_partial_results[2,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[2,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[2,:,:], \
+        #     zenith_partial_results[2,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[2,:,:]) 
+            
+            
+            
         # Distance between (x,y) and (a + 4.5D/sqrt3,b - 7D/ 2);
-        positions_a_aux_m = positions_a_m + torch.tensor([(1.5+1.5*tiers)*isd_m/np.sqrt(3), -(0.5+1.5*tiers)*isd_m, 0], device=self.device) 
+            
+        positions_a_aux_m = positions_a_m + torch.tensor([(1.5+1.5*tiers)*isd_m/np.sqrt(3), 
+                                                          -(0.5+1.5*tiers)*isd_m,
+                                                          0], device=self.device) 
         distance_3d_partial_results[3,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)
         distance_2d_partial_results[3,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[3,:,:], zenith_partial_results[3,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[3,:,:]) 
+        azimuth_partial_results[3,:,:], zenith_partial_results[3,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[3,:,:] ) 
+        # distance_3d_partial_results[3,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[3,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[3,:,:], \
+        #     zenith_partial_results[3,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[3,:,:]) 
+
              
             
         # Distance between (x,y) and (a - 4.5D/sqrt3,b + 7D/2);
-        positions_a_aux_m = positions_a_m + torch.tensor([-(1.5+1.5*tiers)*isd_m/np.sqrt(3), (0.5+1.5*tiers)*isd_m, 0], device=self.device)
-          
+    
+        positions_a_aux_m = positions_a_m + torch.tensor([-(1.5+1.5*tiers)*isd_m/np.sqrt(3), 
+                                                          (0.5+1.5*tiers)*isd_m,
+                                                          0], device=self.device)         
         distance_3d_partial_results[4,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)
         distance_2d_partial_results[4,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[4,:,:], zenith_partial_results[4,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[4,:,:])    
+        azimuth_partial_results[4,:,:], zenith_partial_results[4,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[4,:,:] )    
+        # distance_3d_partial_results[4,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[4,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[4,:,:], \
+        #     zenith_partial_results[4,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[4,:,:]) 
+            
             
             
         # Distance between (x,y) and (a + 7.5D/sqrt3,b + D/ 2);
-        positions_a_aux_m = positions_a_m + torch.tensor([(1.5+3*tiers)*isd_m/np.sqrt(3), isd_m/2, 0], device=self.device)
-
+            
+        positions_a_aux_m = positions_a_m + torch.tensor([(1.5+3*tiers)*isd_m/np.sqrt(3), 
+                                                          isd_m/2,
+                                                          0], device=self.device)    
         distance_3d_partial_results[5,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)   
         distance_2d_partial_results[5,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[5,:,:], zenith_partial_results[5,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[5,:,:])    
+        azimuth_partial_results[5,:,:], zenith_partial_results[5,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[5,:,:] )    
+        # distance_3d_partial_results[5,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[5,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[5,:,:], \
+        #     zenith_partial_results[5,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[5,:,:]) 
+            
             
     
         # Distance between (x,y) and (a - 7.5D/sqrt3,b - D/ 2),
-        positions_a_aux_m = positions_a_m - torch.tensor([(1.5+3*tiers)*isd_m/np.sqrt(3), isd_m/2, 0], device = self.device)
-
+        
+        positions_a_aux_m = positions_a_m - torch.tensor([(1.5+3*tiers)*isd_m/np.sqrt(3), 
+                                                          isd_m/2,
+                                                          0], device = self.device)
         distance_3d_partial_results[6,:,:] = torch.cdist(positions_b_m, positions_a_aux_m)
         distance_2d_partial_results[6,:,:] = torch.cdist(positions_b_m[:,:2], positions_a_aux_m[:,:2])
-        azimuth_partial_results[6,:,:], zenith_partial_results[6,:,:] = \
-            self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[6,:,:])                
+        azimuth_partial_results[6,:,:], zenith_partial_results[6,:,:] = self.calculate_azimuth_zenith_b_to_a_torch(positions_b_m,positions_a_aux_m,distance_2d_partial_results[6,:,:])    
+        
+        # distance_3d_partial_results[6,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m) 
+        # distance_2d_partial_results[6,:,:] = self.calculate_pairwise_distance_b_to_a(positions_b_m[:,:2], positions_a_aux_m[:,:2] + displacement_a_m[:,:2])
+        # azimuth_partial_results[6,:,:], \
+        #     zenith_partial_results[6,:,:]  = self.calculate_azimuth_zenith_b_to_a(positions_b_m, positions_a_aux_m + displacement_a_m, distance_2d_partial_results[6,:,:])   
             
             
-        # Select the min in the 3 dimension
+            
+        # Select the min in the 3 dimension - test points
+        
+        #index_3d_min = np.argmin(distance_3d_partial_results, axis=0)  
+        ##distance_3d_results = np.min(distance_3d_partial_results, axis=0)       
+        #distance_3d_results = np.array([[distance_3d_partial_results[index_3d_min[i,j],i,j] for j in range(0, np.size(index_3d_min, 1))] for i in range(0, np.size(index_3d_min, 0))])
+        #
+        #index_2d_min = np.argmin(distance_2d_partial_results, axis=0) 
+        #distance_2d_results = np.array([[distance_2d_partial_results[index_2d_min[i,j],i,j] for j in range(0, np.size(index_2d_min, 1))] for i in range(0, np.size(index_2d_min, 0))]) 
+        #
+        #azimuth_results = np.array([[azimuth_partial_results[index_3d_min[i,j],i,j] for j in range(0, np.size(index_3d_min, 1))] for i in range(0, np.size(index_3d_min, 0))]) 
+        #zenith_results = np.array([[zenith_partial_results[index_3d_min[i,j],i,j] for j in range(0, np.size(index_3d_min, 1))] for i in range(0, np.size(index_3d_min, 0))]) 
+        
+        #DOING IT BY DIRECT ARRAY INDEXING
+        
         index_3d_min = torch.argmin(distance_3d_partial_results, dim=0)
         index_2d_min = torch.argmin(distance_2d_partial_results, dim=0) 
 
         # Creating arrays of indices for gathering the results efficiently
+        
         i_indices, j_indices = np.indices(index_3d_min.shape)
 
-        # Efficiently gather results using the index_3d_min and index_2d_min
+        # Efficiently gather the 3D distance results using the index_3d_min
+        
         distance_3d_results = distance_3d_partial_results[index_3d_min, i_indices, j_indices]
+
+        # Efficiently gather the 2D distance results using the index_2d_min
+        
         distance_2d_results = distance_2d_partial_results[index_2d_min, i_indices, j_indices]
+
+        # Efficiently gather the azimuth and zenith results
+        
         azimuth_results = azimuth_partial_results[index_3d_min, i_indices, j_indices]
         zenith_results = zenith_partial_results[index_3d_min, i_indices, j_indices]
 
-        # Converting to numpy 
+        #converting to numpy 
+
         distance_3d_results = distance_3d_results.cpu().numpy()
         distance_2d_results = distance_2d_results.cpu().numpy()
         azimuth_results = azimuth_results.cpu().numpy()
@@ -354,18 +439,18 @@ class Distance_Angles(Saveable):
 
         def Rz(a):
             return np.array([[np.cos(a), -np.sin(a), 0],
-                             [np.sin(a),  np.cos(a), 0],
-                             [0,          0,         1]], dtype=np.float64)
+                            [np.sin(a),  np.cos(a), 0],
+                            [0,          0,         1]], dtype=np.float64)
 
         def Ry(b):
             return np.array([[ np.cos(b), 0, np.sin(b)],
-                             [ 0,         1, 0        ],
-                             [-np.sin(b), 0, np.cos(b)]], dtype=np.float64)
+                            [ 0,         1, 0        ],
+                            [-np.sin(b), 0, np.cos(b)]], dtype=np.float64)
 
         def Rx(c):
             return np.array([[1, 0,          0        ],
-                             [0, np.cos(c), -np.sin(c)],
-                             [0, np.sin(c),  np.cos(c)]], dtype=np.float64)
+                            [0, np.cos(c), -np.sin(c)],
+                            [0, np.sin(c),  np.cos(c)]], dtype=np.float64)
 
         # Convert to different reference system, 
         # to be aligned for 3GPP 38.901 computations
@@ -435,18 +520,18 @@ class Distance_Angles(Saveable):
 
         def Rz(a):
             return np.array([[np.cos(a), -np.sin(a), 0],
-                             [np.sin(a),  np.cos(a), 0],
-                             [0,          0,         1]], dtype=np.float64)
+                            [np.sin(a),  np.cos(a), 0],
+                            [0,          0,         1]], dtype=np.float64)
 
         def Ry(b):
             return np.array([[ np.cos(b), 0, np.sin(b)],
-                             [ 0,         1, 0        ],
-                             [-np.sin(b), 0, np.cos(b)]], dtype=np.float64)
+                            [ 0,         1, 0        ],
+                            [-np.sin(b), 0, np.cos(b)]], dtype=np.float64)
 
         def Rx(c):
             return np.array([[1, 0,          0        ],
-                             [0, np.cos(c), -np.sin(c)],
-                             [0, np.sin(c),  np.cos(c)]], dtype=np.float64)
+                            [0, np.cos(c), -np.sin(c)],
+                            [0, np.sin(c),  np.cos(c)]], dtype=np.float64)
 
         # same convention you used
         β_eff = β - (np.pi / 2)
@@ -472,7 +557,26 @@ class Distance_Angles(Saveable):
 
     
 class Distance_Angles_ue_to_cell(Distance_Angles):
-    pass
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            "distances_b_to_a_3d_m": "ue_kpi"
+        }
+
 
 class Distance_Angles_ueAnt_to_cellAnt(Distance_Angles):
-    pass
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return [
+            
+            ]
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            
+        }

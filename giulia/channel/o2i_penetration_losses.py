@@ -4,10 +4,7 @@ Created on Thu Mar 23 11:40:53 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import itertools
@@ -36,6 +33,7 @@ class O2I_Penetration_Loss(Saveable):
 
         ##### Input storage 
         ######################## 
+        
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj    
@@ -44,15 +42,19 @@ class O2I_Penetration_Loss(Saveable):
        
         ##### Outputs 
         ########################   
+        
         # Place holder to store path loss results
         
         self.o2i_penetration_losses_b_to_a_dB = []
         self.df_o2i_penetration_losses_b_to_a_dB = []
         
 
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["o2i_penetration_losses_b_to_a_dB"]
+        return []
 
        
     def process(self, rescheduling_us=-1): 
@@ -61,29 +63,35 @@ class O2I_Penetration_Loss(Saveable):
         ########################  
         
         # Random numbers
+        
         self.rng = np.random.RandomState(self.simulation_config_obj.random_seed+0)        
             
         # Network
+        
         self.bs_propagation_models = self.network_deployment_obj.df_ep["BS_propagation_model"].to_numpy()
         self.bs_fast_channel_models = self.network_deployment_obj.df_ep["BS_fast_channel_model"].to_numpy()        
         self.dl_carrier_frequency_GHz = self.network_deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy(dtype=np.single) 
         self.site_ID = self.network_deployment_obj.df_ep["site_ID"].to_numpy()
         
         # Users deployment 
+        
         self.indoor = self.ue_deployment_obj.df_ep[["indoor"]].to_numpy(dtype=bool)      
 
         # Channel characterisitics  
+        
         self.zeniths_b_to_a_wraparound_degrees = self.distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees
         self.d_2D_in_m = self.distance_angles_ue_to_cell_obj.d_2D_in_m
 
 
         ##### Process outputs
         ########################
+        
         self.o2i_penetration_losses_b_to_a_dB = np.zeros((np.size(self.d_2D_in_m,0), np.size(self.dl_carrier_frequency_GHz,0)), dtype=np.single)
      
        
         ##### Start timer
         ########################  
+       
         t_start = time.perf_counter()  
         
     
@@ -91,6 +99,7 @@ class O2I_Penetration_Loss(Saveable):
         ########################            
         
         # Find the set of unique propagation models to process them independently
+        
         bs_propagation_models_set = set(self.bs_propagation_models)
         bs_fast_channel_models_set = set(self.bs_fast_channel_models)
         
@@ -105,6 +114,7 @@ class O2I_Penetration_Loss(Saveable):
             mask = np.bitwise_and(bs_propagation_model ==  self.bs_propagation_models, bs_fast_channel_model ==  self.bs_fast_channel_models)
             
             # Get necessary information of the identified cells
+            
             dl_carrier_frequency_GHz = self.dl_carrier_frequency_GHz[mask] 
             site_ID = self.site_ID[mask]
             
@@ -115,24 +125,29 @@ class O2I_Penetration_Loss(Saveable):
             
             # Calculate path loss
             
-            if (bs_propagation_model == "3GPPTR38_901_UMa" and bs_fast_channel_model != "3GPPTR38_901_UMa") \
-                or (bs_propagation_model == "3GPPTR38_901_UMi" and bs_fast_channel_model != "3GPPTR38_901_UMi"):
-
+            if (bs_propagation_model == "3GPPTR38_901_UMa" and bs_fast_channel_model != "3GPPTR38_901_UMa") or (bs_propagation_model == "3GPPTR38_901_UMi" and bs_fast_channel_model != "3GPPTR38_901_UMi"):
+            
                 self.o2i_penetration_losses_b_to_a_dB[:, mask] = self.o2i_loss_3GPPTR38_901_UMa_Umi(dl_carrier_frequency_GHz, site_ID, self.indoor, d_2D_in_m)
                 
             elif bs_propagation_model == "3GPPTR38_811_Urban_NTN" or bs_propagation_model == "3GPPTR38_811_Dense_Urban_NTN":
+                
                 self.o2i_penetration_losses_b_to_a_dB[:, mask] = self.o2i_loss_3GPPTR38_811(dl_carrier_frequency_GHz, self.indoor, zeniths_b_to_a_wraparound_degrees, d_2D_in_m)
                 
         # Store in data frames the results as it may be useful to post process
+        
         self.df_o2i_penetration_losses_b_to_a_dB = pd.DataFrame(self.o2i_penetration_losses_b_to_a_dB, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])  
         
 
         ##### Save to plot
         ########################         
+        
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.simulation_config_obj.project_name, 'to_plot_o2i_penetration_loss')
-            np.savez(file_name, o2i_penetration_losses_b_to_a_dB = self.o2i_penetration_losses_b_to_a_dB[self.o2i_penetration_losses_b_to_a_dB != 0])
+            np.savez(
+                file_name,
+                o2i_penetration_losses_b_to_a_dB = self.o2i_penetration_losses_b_to_a_dB[self.o2i_penetration_losses_b_to_a_dB != 0]
+            )
             
 
         ##### End
@@ -170,29 +185,37 @@ class O2I_Penetration_Loss(Saveable):
             L_concrete = 5 + 4 * f_c_mat_GHz
             
             # Mask for users in low or high loss 
+            
             random_low_high_loss = self.rng.choice([True, False], size=np.size(d_2D_in_m,0), p=[0.5, 0.5])[:,np.newaxis] * np.ones((1,np.size(f_c_GHz,0)),dtype=bool)
             mask_high_loss = np.logical_and(indoor_mat, random_low_high_loss)
             
             
             # Low loss model 
-            PL_tw_dB[indoor_mat] = 5 - 10 * np.log10(0.3 * np.power(10,-L_glass[indoor_mat]/10) + 0.7 * np.power(10,-L_concrete[indoor_mat]/10) )            
+            
+            PL_tw_dB[indoor_mat] = 5 - 10 * np.log10(0.3 * np.power(10,-L_glass[indoor_mat]/10) + 0.7 * np.power(10,-L_concrete[indoor_mat]/10) )
+            #P_building_penetration_loss_dB[indoor_mat] = self.rng.normal(0, 4.4, PL_in_dB.shape)[indoor_mat] # [:,np.newaxis]  *  np.ones((1,np.size(f_c_GHz,0)),dtype=bool))[indoor_mat]
+            
             rnd_generator = self.rng.normal(0, 4.4, (np.size(indoor_mat,0), np.size(unique_elements))) # This is to maintain correlation across sites
-
             # Map back to all cells of the site using `np.take` to replicate the values according to `inverse_indices`
             P_building_penetration_loss_dB[indoor_mat]  = np.take(rnd_generator, inverse_indices, axis=1)[indoor_mat]
             
             
             # High loss model 
-            PL_tw_dB[mask_high_loss] = 5 - 10 * np.log10(0.7 * np.power(10,-L_IIRglass[mask_high_loss]/10) + 0.3 * np.power(10,-L_concrete[mask_high_loss]/10))            
+            
+            PL_tw_dB[mask_high_loss] = 5 - 10 * np.log10(0.7 * np.power(10,-L_IIRglass[mask_high_loss]/10) + 0.3 * np.power(10,-L_concrete[mask_high_loss]/10))
+            #P_building_penetration_loss_dB[mask_high_loss] = self.rng.normal(0, 6.5, PL_in_dB.shape)[mask_high_loss] # [:,np.newaxis] * np.ones((1,np.size(f_c_GHz,0)),dtype=bool))[mask_low_high_loss] 
+            
             rnd_generator = self.rng.normal(0, 6.5, (np.size(indoor_mat,0), np.size(unique_elements))) # This is to maintain correlation across sites
-
             # Map back to all cells of the site using `np.take` to replicate the values according to `inverse_indices`
             P_building_penetration_loss_dB[mask_high_loss]  = np.take(rnd_generator, inverse_indices, axis=1)[mask_high_loss]            
             
             
             # Adding O2I building penetration to path loss
+            
             o2i_penetration_loss_for_model_dB[indoor_mat] = PL_in_dB[indoor_mat] + PL_tw_dB[indoor_mat] + P_building_penetration_loss_dB[indoor_mat]
-                        
+            
+            #o2i_penetration_loss_for_model_dB = o2i_penetration_loss_for_model_dB[:,10][:,np.newaxis] * np.ones((1,np.size(f_c_GHz,0)))
+            
             # O2I car penetration loss model  
             
             # P_car_penetration_loss_dB = np.zeros(PL_in_dB.shape)
@@ -203,7 +226,6 @@ class O2I_Penetration_Loss(Saveable):
             # o2i_penetration_loss_for_model_dB[~indoor_mat] += P_car_penetration_loss_dB[~indoor_mat]
             
         return o2i_penetration_loss_for_model_dB
-    
         
     def o2i_loss_3GPPTR38_811(self, f_c_GHz, indoor, zeniths_b_to_a_wraparound_degrees, d_2D_in_m):
         
@@ -280,3 +302,4 @@ class O2I_Penetration_Loss(Saveable):
         o2i_penetration_loss_for_model_dB[mask_high_loss]  = 10 * np.log10(np.power(10, 0.1*A_P ) + np.power(10, 0.1*B_P ) + np.power(10, 0.1*C))
             
         return o2i_penetration_loss_for_model_dB  
+    

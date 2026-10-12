@@ -1,20 +1,47 @@
-**pycache**
+# Python bytecode
+__pycache__/
+
 # Generated results
 /outputs/
-# Large pre-calculated mat files
-# *.mat
-# Precomputed test results
-regression_test_dlp
-# Numpy data
+
+# Large pre-calculated shadowing maps (shadowing/*.mat)
+*.mat
+
+# Numpy data written by the simulator and the plotting scripts
+*.npy
 *.npz
+
 # Downloaded aux files
+# shadowing.zip: scripts/download_shadowing_files.py
+# precomputed_files.zip: the reference bundle behind PRECOMPUTED_FILES (tests/run)
 shadowing.zip
 precomputed_files.zip
+
+# Precomputed test results (mirrors tests/.gitignore, for runs launched from the root)
+regression_test_dlp
+
+# Dynamically generated pairing results (.npy files)
+/data/pairing_sym_results/
 
 # Custom configuration files
 config.yml
 
 # Local files
 /local_files
+
 .claude
-.vscode
+
+
+### Intellij+all Patch ###
+# Ignore everything but code style settings and run configurations
+# that are supposed to be shared within teams.
+
+.idea/*
+
+!.idea/codeStyles
+!.idea/runConfigurations
+
+# End of https://www.toptal.com/developers/gitignore/api/intellij+all
+
+# Ignore output from Graphify (AI-tool)
+graphify-out/

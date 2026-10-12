@@ -2,17 +2,11 @@
 """
 Created on Wed Apr 19 17:48:13 2023
 
-
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
-import sys
 import time
 
 import numpy as np
@@ -38,6 +32,7 @@ class Beam_Selection(Saveable):
         ue_playground_deployment_obj: Any,
         ue_deployment_obj: Any,
         beam_conf_obj: Any,
+        time_frequency_resource_obj: Any,
         RSRP_ue_to_cell_obj: Any,
         best_serving_cell_per_ue_obj: Any,
     ):
@@ -66,16 +61,56 @@ class Beam_Selection(Saveable):
         self.beam_conf_obj: Any = beam_conf_obj
         self.RSRP_ue_to_cell_obj: Any = RSRP_ue_to_cell_obj
         self.best_serving_cell_per_ue_obj: Any = best_serving_cell_per_ue_obj
+        self.time_frequency_resource_obj: Any = time_frequency_resource_obj
 
         # Outputs
         self.best_serving_beam_ID_per_ue: np.ndarray = np.array([])
         self.best_serving_beam_rsrp_per_ue_dBm: np.ndarray = np.array([])
 
-
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["best_serving_beam_ID_per_ue","best_serving_beam_rsrp_per_ue_dBm"]
-    
+        return [
+            # ---- CSI-RS (Channel State Information Reference Signal) ----
+            "best_serving_beam_ID_per_ue",
+            "best_serving_beam_rsrp_per_ue_dBm",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue"
+        ]
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        return {
+            # ---- CSI-RS (Channel State Information Reference Signal) ----
+            "best_serving_beam_ID_per_ue": "ue_kpi",
+            "best_serving_beam_rsrp_per_ue_dBm": "ue_kpi",
+            # ---- UE counts per cell and beam ----
+            # ues_per_beam / beam_activity_per_ue only exist for CSI-RS beams; otherwise skipped.
+            "ues_per_beam": "csiRsBeam_kpi",
+            # ---- Cell and beam activity ----
+            # 2-D UE×beam activity mask: one row per UE, beams spread into columns.
+            "beam_activity_per_ue": "ue_kpi",
+        }
+
+    def expose_variable_column_prefixes(self) -> Dict[str, str]:
+        """Label the expanded sub-columns of the 2-D activity mask (beams spread into columns)."""
+        return {
+            # -> '<Class>.beam_activity_per_ue.beam0', '.beam1', ...
+            "beam_activity_per_ue": "beam"
+        }
+
+    def expose_variable_descriptions(self) -> Dict[str, str]:
+        """Human-readable description for each exposed variable (shown in the Saveable catalog)."""
+        return {
+            # ---- CSI-RS (Channel State Information Reference Signal) ----
+            "best_serving_beam_ID_per_ue": "ID of the serving CSI-RS beam (data channel) for each UE, where the selection is based on CSI-RS measurements.",
+            "best_serving_beam_rsrp_per_ue_dBm": "Reference Signal Received Power (RSRP) measured by each UE from its serving CSI-RS. Reflects the average received power of resource elements carrying such CSI-RS.",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam": "Number of UEs served by each CSI-RS beam based on the corresponding CSI-RS-based selection.",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue": "Binary mask indicating the CSI-RS beams that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data."
+        }
+
 
     def process(self, rescheduling_us: int = -1) -> int:
         """
@@ -91,34 +126,49 @@ class Beam_Selection(Saveable):
         t_start: float = time.perf_counter()
     
         # Get beam-to-cell mapping
-        beam_to_node_mapping: np.ndarray = \
-            np.arange(len(self.network_deployment_obj.df_ep)).astype(int) if self.beam_conf_obj is None \
+        beam_to_node_mapping: np.ndarray = (
+            np.arange(len(self.network_deployment_obj.df_ep)).astype(int)
+            if self.beam_conf_obj is None
             else self.beam_conf_obj.beam_to_node_mapping
+        )
     
         # Best serving cell per UE
         best_serving_cell_ID_per_ue: np.ndarray = self.best_serving_cell_per_ue_obj.best_serving_cell_ID_per_ue
     
         # Initialize outputs
-        self.best_serving_beam_ID_per_ue: np.ndarray = np.full(len(self.ue_deployment_obj.df_ep), -1, dtype=int)
-        self.best_serving_beam_rsrp_per_ue_dBm: np.ndarray = np.full(len(self.ue_deployment_obj.df_ep), np.nan, dtype=float)
+        self.best_serving_beam_ID_per_ue: np.ndarray = np.full(
+            len(self.ue_deployment_obj.df_ep), -1, dtype=int
+        )
+        self.best_serving_beam_rsrp_per_ue_dBm: np.ndarray = np.full(
+            len(self.ue_deployment_obj.df_ep), np.nan, dtype=float
+        )
     
         # Perform beam selection for each frequency layer
         if self.compute_type == "strongest_rsrp":
             for frequency_key, rsrp_data in self.RSRP_ue_to_cell_obj.RSRP_results_per_frequency_layer.items():
                 
+                # Get the corresponding resource information for the current frequency layer
+                time_frequency_resource_info = self.time_frequency_resource_obj.dl_frequency_layer_info[frequency_key]
+
                 # Compute best serving beams and corresponding RSRP values
-                best_beam_global_idx, best_beam_rsrp_dBm = \
-                    self.strongest_rsrp(beam_to_node_mapping,best_serving_cell_ID_per_ue,rsrp_data)                
+                best_beam_global_idx, best_beam_rsrp_dBm = self.strongest_rsrp(
+                    beam_to_node_mapping,
+                    best_serving_cell_ID_per_ue,
+                    time_frequency_resource_info,
+                    rsrp_data,
+                )                
     
                 # Update results for the current frequency layer
-                ues_in_frequency_mask = rsrp_data["ues_in_frequency_mask"]
+                ues_in_frequency_mask = time_frequency_resource_info["ues_in_frequency_mask"]
                 self.best_serving_beam_ID_per_ue[ues_in_frequency_mask] = best_beam_global_idx
                 self.best_serving_beam_rsrp_per_ue_dBm[ues_in_frequency_mask] = best_beam_rsrp_dBm
     
         # Calculate beam activity if beam type is "CSI_RS"
         if self.beam_conf_obj and self.beam_conf_obj.beam_type == "CSI_RS":
-            self.beam_activity_per_ue, self.ues_per_beam = \
-                calculate_cell_beam_activity.CSI_RS_beam_activity(self.beam_conf_obj,self.best_serving_beam_ID_per_ue)
+            self.beam_activity_per_ue, self.ues_per_beam = calculate_cell_beam_activity.CSI_RS_beam_activity(
+                self.beam_conf_obj,
+                self.best_serving_beam_ID_per_ue,
+            )
             
         # Plot some stats    
         self.calculate_beam_stats()
@@ -133,14 +183,16 @@ class Beam_Selection(Saveable):
         self,
         beam_to_node_mapping: np.ndarray,
         best_serving_cell_ID_per_ue: np.ndarray,
+        time_frequency_resource_info: Dict[str, np.ndarray],
         rsrp_data: Dict[str, np.ndarray],
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Identifies the strongest RSRP beam for each UE and retrieves the corresponding RSRP values.
     
         Args:
             beam_to_node_mapping (np.ndarray): Mapping of beams to cell IDs. Shape: (Beams,)
             best_serving_cell_ID_per_ue (np.ndarray): Best serving cell ID per UE. Shape: (UEs,)
+            time_frequency_resource_info (Dict[str, np.ndarray]): Dictionary containing time-frequency resource information for the current frequency layer.    
             rsrp_data (Dict[str, np.ndarray]): Dictionary containing:
                 - "RSRP_ue_to_cell_dBm" (np.ndarray): RSRP values (dBm) for UEs and beams. Shape: (UEs, Beams)
                 - "ues_in_frequency_mask" (np.ndarray): Boolean mask for UEs in frequency. Shape: (UEs,)
@@ -153,10 +205,12 @@ class Beam_Selection(Saveable):
                 - best_serving_beam_rsrp_per_ue (np.ndarray): RSRP values for the strongest beams per UE. Shape: (UEs,)
         """
     
+        # Extra per Layer info
+        ues_in_frequency_mask: np.ndarray = time_frequency_resource_info["ues_in_frequency_mask"]
+        selected_cell_IDs: np.ndarray = time_frequency_resource_info["cell_IDs"]
+
         # Extract relevant RSRP data
         rsrp_ue_to_cell_dBm: np.ndarray = rsrp_data["RSRP_ue_to_cell_dBm"]
-        ues_in_frequency_mask: np.ndarray = rsrp_data["ues_in_frequency_mask"]
-        selected_cell_IDs: np.ndarray = rsrp_data["cell_IDs"]
     
         # Filter UEs that are active in the given frequency
         best_serving_cells_filtered: np.ndarray = best_serving_cell_ID_per_ue[ues_in_frequency_mask]
@@ -166,8 +220,9 @@ class Beam_Selection(Saveable):
         beam_indices: np.ndarray = np.where(beam_mask)[0]  # Global beam indices
     
         # Identify beams corresponding to the best-serving cell of each UE
-        beams_of_best_server_per_ue: np.ndarray = \
+        beams_of_best_server_per_ue: np.ndarray = (
             beam_to_node_mapping[beam_mask][np.newaxis, :] == best_serving_cells_filtered[:, np.newaxis]
+        )
     
         # Mask RSRP values for beams not associated with the best-serving cell
         rsrp_aux: np.ndarray = np.where(beams_of_best_server_per_ue, rsrp_ue_to_cell_dBm, np.nan)
@@ -182,7 +237,7 @@ class Beam_Selection(Saveable):
         best_serving_beam_rsrp_per_ue: np.ndarray = np.nanmax(rsrp_aux, axis=-1)
     
         return best_beam_global_idx, best_serving_beam_rsrp_per_ue
-
+    
 
     def calculate_beam_stats(self):
         """
@@ -229,7 +284,6 @@ class Beam_Selection(Saveable):
                 metadata={"number_of_cells": number_of_cells},
             )
     
-
     def _save_heatmap(
         self,
         file_suffix: str,

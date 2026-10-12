@@ -23,7 +23,7 @@ ue_throughput_per_carrier_Mbps,"Downlink throughput achieved by each UE on a giv
 cell_throughput_Mbps,"Total downlink throughput achieved by each cell, measured in megabits per second (Mbps). Represents the aggregated data rate across all scheduled UEs served by that cell.",Mbps,float64,"(number_of_episodes, number_of_steps, number_of_cells)"
 carrier_throughput_Mbps,"Total downlink throughput measured over a specific carrier in megabits per second (Mbps). It reflects the combined data rate across all cells operating on that carrier, including all scheduled UEs.",Mbps,float64,"(number_of_episodes, number_of_steps, number_of_carriers)"
 ,,,,
-power_consumption_perRadio_kW,The power consumed by each radio deployed in the network,kW,float64,"(number_of_episodes, number_of_steps, number_of_radio)"
+power_consumption_per_radio_unit_incl_bbu_kW,"The power consumed by each radio unit deployed in the network, including the power share of its attached BBU(s).",kW,float64,"(number_of_episodes, number_of_steps, number_of_radio)"
 network_power_consumption_per_radioType_kW,The total power consumed from each different radio type deployed in the netwok,kW,float64,"(numbet_of_episodes, number_of_steps, number_of_RadioType)"
 total_network_power_consumption_kW,The total aggregated power consumed by all base stations of the network.,kW,float64,"(number_of_episodes, number_of_steps)"
 ,,,,

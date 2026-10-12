@@ -12,26 +12,33 @@ d.lopez@iteam.upv.es
 matteo.bernabe@ieee.org 
 matteo.bernabe@iteam.upv.es
 """
-
 ### This is the MAIN of Guilia 
 
 import argparse
 import os
 
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import sys
-from typing import Type, List, Tuple
+from typing import Type, List, Optional, Tuple
 
 # Configure Giulia into path
 examples_dir = os.path.dirname(__file__)
 root_dir = os.path.join(examples_dir, '..')
 sys.path.insert(1, root_dir)
 
+from giulia.inputs.config.OutputFormat import OutputFormat
+from giulia.inputs.config.parquet import ParquetFormat
+
 from giulia.logger import info, get_log_level, parse_log_level, set_log_level, warning#, LogLevel, debug, error
+# import numpy as np
+# from tqdm import tqdm
+#from giulia.presets.g_multi_layer_preset import GiuliaMfl #g_slow_channel_association_preset, g_standard_preset
+#from giulia.presets.g_standard_preset import GiuliaStd #g_slow_channel_association_preset, g_standard_preset
+from giulia.inputs import InputConfig
 from giulia.outputs import save_episode_performance
 
 from examples.art import giulia_art
-from giulia.tools.tools import free_memory, log_saveable_available_results
+from giulia.tools import tools
+from giulia.tools.tools import free_memory, log_saveable_available_results, dBm_to_mW
     
 def inputs(args: List[str]) -> Tuple[str, str, str, str, str, str, bool, int, int, bool, bool, str]:
     
@@ -61,14 +68,15 @@ def inputs(args: List[str]) -> Tuple[str, str, str, str, str, str, bool, int, in
     # Initialize argument parser
     parser = argparse.ArgumentParser(description="Giulia Simulation Configuration")
     
+    
     # Simulation preset
-    parser.add_argument("--preset", type=str, default="GiuliaMfl",
+    parser.add_argument("--preset", type=str, default="GiuliaStd",
                         help="Simulation preset:\n"
                              "  - 'GiuliaStd': Standard simulation\n"
                              "  - 'GiuliaMfl': Multi-frequency layer simulation")
     
     # Scenario/Network model
-    parser.add_argument("--scenario_model", type=str, default="ITU_R_M2135_UMa", #Dataset_HW
+    parser.add_argument("--scenario_model", type=str, default="3GPPTR38_901_4G_5G_multilayer", #Dataset_HW
                         help="Specify the simulation model:\n"
                             "ITU_R_M2135_UMa,\n" 
                             "ITU_R_M2135_UMi,\n"
@@ -115,6 +123,9 @@ def inputs(args: List[str]) -> Tuple[str, str, str, str, str, str, bool, int, in
                             "3GPPTR38_901_4G_5G_multilayer,\n"
                             "3GPPTR38_901_4G_5G6G_multilayer,\n"
                             "3GPPTR38_901_4G_5G_6G_multilayer,\n"
+
+                            "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G,\n"
+                            "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G,\n"
                             
                             "3GPPTR38_901_4G5G_cell_reselection,\n"
                             
@@ -165,13 +176,13 @@ def inputs(args: List[str]) -> Tuple[str, str, str, str, str, str, bool, int, in
 
     # Output settings
     parser.add_argument("--log_level", type=int, default=0,
-                        choices=range(0, 4),
+                        choices=range(0, 5),
                         help="Set the logging level.")
     
     parser.add_argument("--save_results", type=int, default=1,
                         help="Save simulation results (1 = Yes, 0 = No).")
 
-    parser.add_argument("--plots", type=bool, default=True,
+    parser.add_argument("--plots", type=bool, default=False,
                         help="Generate plots for simulation results.")
     
     # Parse arguments
@@ -206,12 +217,13 @@ def get_giulia_class(preset: str) -> Type:
     return Giulia
 
     
-def main(args: List[str]):
+def main(args: List[str], config: Optional[InputConfig] = None):
     """
     Main function to run Giulia simulations.
 
     Args:
         args (List[str]): Command-line arguments.
+        config (Optional[InputConfig]): Optional configuration object.
     """
     #### INPUTS ####
     args, project_name = inputs(args)
@@ -239,15 +251,20 @@ def main(args: List[str]):
 
     # Show current log level as error so that it's always shown
     warning("Logging level is set to", get_log_level())
-    
-    #### OUTPUTS #### 
-    ###########################          
-    outputs_obj = save_episode_performance.Episode_Performance(number_of_episodes, regression)
 
     #### RUNNING GIULIA ####
     max_simulation_time_us = 1e6  # Max simulation time in microseconds
     decision_making_interval_us = 1e6  # Decision-making interval
     number_of_steps = int(max_simulation_time_us/decision_making_interval_us)  # Total simulation steps
+
+    outputs_obj = save_episode_performance.Episode_Performance(
+        number_of_episodes,
+        number_of_steps,
+        regression,
+        config.output_dir if config is not None else None,
+        config.output_formats if config is not None else [ParquetFormat()],
+        config.output_fields if config is not None else None,
+    )
 
     # Dynamically load the appropriate Giulia class
     Giulia = get_giulia_class(preset)
@@ -255,10 +272,10 @@ def main(args: List[str]):
     # Initialize Giulia simulation
     g = Giulia(preset, scenario_model, ue_playground_model, ue_distribution, ue_mobility,
                link_direction, wraparound, save_results, plots, number_of_episodes, regression, enable_GPU)
+    
 
-
-    # Run simulation for each episode
     for episode_index in range(number_of_episodes):
+
         # Configure Giulia for the current episode
         g.configure(episode_index, max_simulation_time_us)
 
@@ -271,12 +288,14 @@ def main(args: List[str]):
             # Run a step of the simulation
             g.run_simulation(step_index, decision_making_interval_us)
 
-
         # Save performance metrics for this episode
         outputs_obj.save_episode_performance(episode_index, g)
 
     # Save all episodes' performance data to file
     outputs_obj.save_episodes_performance_in_file(project_name)
+
+    # Log available saveable results
+    # log_saveable_available_results()
 
     # Free The Memory
     free_memory()

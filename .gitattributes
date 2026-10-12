@@ -1,1 +1,4 @@
+*.parquet filter=lfs diff=lfs merge=lfs -text
 *.mat filter=lfs diff=lfs merge=lfs -text
+shadowing/*.mat filter=lfs diff=lfs merge=lfs -text
+shadowing/**/*.mat filter=lfs diff=lfs merge=lfs -text

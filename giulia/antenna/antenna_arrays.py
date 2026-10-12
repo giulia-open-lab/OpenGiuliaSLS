@@ -4,11 +4,7 @@ Created on Thu Mar 23 11:40:53 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import sys
@@ -18,6 +14,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 import sionna
+from sionna.rt import PlanarArray
 
 from giulia.event_driven.snapshot_control import Snapshot_control
 from giulia.fs import results_file
@@ -37,11 +34,13 @@ class Antenna_Array(Saveable):
         
         ##### Plots
         ########################
+
         self.plot = 0 # Switch to control plots if any
 
 
         ##### Input storage
         ########################
+        
         self.simulation_config_obj = simulation_config_obj
         self.site_deployment_obj = site_deployment_obj
         self.deployment_obj = deployment_obj
@@ -50,19 +49,23 @@ class Antenna_Array(Saveable):
 
         ##### Outputs
         ########################
+
         self.df_ep = []
         
         self.antenna_to_node_mapping = []
 
         # Sionna related
+
         self.antenna_array_types = [] # Antenna array type list
         self.antenna_array_type_index = [] # Indeces indicating the antenna array type of each node
         self.antenna_array_carrier_frequency_GHz = [] # Carrier frequency of each antenna array type
 
+    @property
+    def label(self) -> str: return 'cell_kpi'
 
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["antenna_to_node_mapping"]
+        return []
 
 
     def process(self, rescheduling_us=-1):
@@ -71,10 +74,12 @@ class Antenna_Array(Saveable):
         ######################## 
         
         # Simulation
+
         self.project_name = self.simulation_config_obj.project_name
         self.sn_indicator = self.simulation_config_obj.sn_indicator        
         
         # Nodes
+
         self.node_positions_m = self.deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)
         self.indoor = self.deployment_obj.df_ep[["indoor"]].to_numpy(dtype=bool)
         self.dl_carrier_frequency_GHz = self.deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy()
@@ -85,6 +90,7 @@ class Antenna_Array(Saveable):
         self.bs_antenna_models = self.deployment_obj.df_ep["antenna_pattern_model"].to_numpy()
 
         # Antenna element information
+
         self.antenna_config_max_gain_dBi = self.deployment_obj.df_ep["antenna_config_max_gain_dBi"].to_numpy(dtype=np.single)
 
         self.antenna_config_hor_phi_3dB_deg = self.deployment_obj.df_ep["antenna_config_hor_phi_3dB_deg"].to_numpy(dtype=np.single)
@@ -94,6 +100,7 @@ class Antenna_Array(Saveable):
         self.antenna_config_ver_SLA_dB = self.deployment_obj.df_ep["antenna_config_ver_SLA_dB"].to_numpy(dtype=np.single)
 
         # Antenna array information
+
         self.antenna_config_Mg = self.deployment_obj.df_ep["antenna_config_Mg"].to_numpy(dtype=int)
         self.antenna_config_Ng = self.deployment_obj.df_ep["antenna_config_Ng"].to_numpy(dtype=int)
         self.antenna_config_M = self.deployment_obj.df_ep["antenna_config_M"].to_numpy(dtype=int) # vertical
@@ -114,11 +121,13 @@ class Antenna_Array(Saveable):
         
         ##### Start timer
         ########################        
+
         t_start = time.perf_counter()
 
 
         ##### Calculate the position of each antenna element in the local coordinate system (LCS) as well as antenna element to node mapping vector and data frame
         ########################
+
         self.df_ep,\
         self.antenna_to_node_mapping =\
            self.calculate_antenna_element_LCS_positions(self.node_type,
@@ -140,6 +149,7 @@ class Antenna_Array(Saveable):
 
         ##### Calculate the position of each antenna element in the global coordinate system (GCS)
         ########################
+
         antenna_element_GCS_position_m = self.calculate_antenna_element_GCS_positions(self.node_type,
                                                                                      self.node_positions_m,
                                                                                      self.antenna_config_hor_alpha_mec_bearing_deg,
@@ -151,26 +161,36 @@ class Antenna_Array(Saveable):
 
         ##### Add the GCS locations to the df_antenna_arrays dataframe
         ########################
+
         self.df_ep['position_x_m'] = antenna_element_GCS_position_m[:,0]
         self.df_ep['position_y_m'] = antenna_element_GCS_position_m[:,1]
         self.df_ep['position_z_m'] = antenna_element_GCS_position_m[:,2]
 
         ### If Sionna is to be used, derive unique antenna array types and the indeces indicating the antenna array type of each node
+
         if self.sn_indicator == 1:
 
-            self.antenna_array_types, self.antenna_array_type_index, self.antenna_array_carrier_frequency_GHz = \
+            self.antenna_array_types, \
+                self.antenna_array_type_index, \
+                self.antenna_array_carrier_frequency_GHz = \
                 self.derive_unique_antenna_array_types(self.site_deployment_obj, self.deployment_obj)
 
             # Adding the indeces of the antenna array to the df_ep
+
             self.deployment_obj.df_ep['antenna_array_type_index'] = self.antenna_array_type_index
 
 
         ##### Save to plot
         ########################
+
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.project_name, 'to_plot_' + self.node_type + '_antenna_arrays')
-            np.savez(file_name, antenna_to_node_mapping=self.antenna_to_node_mapping, antenna_element_GCS_position_m=antenna_element_GCS_position_m)
+            np.savez(
+                file_name,
+                antenna_to_node_mapping=self.antenna_to_node_mapping,
+                antenna_element_GCS_position_m=antenna_element_GCS_position_m
+            )
 
 
         ##### End
@@ -178,7 +198,6 @@ class Antenna_Array(Saveable):
         log_calculations_time(f'{self.node_type} antenna array model', t_start)
 
         return rescheduling_us
-
 
     def basic_checks(self):
 
@@ -217,6 +236,7 @@ class Antenna_Array(Saveable):
         antenna_element_LCS_position_m = np.zeros((number_of_elements,3), dtype=np.single)
 
         # Other relevant variables
+
         ant_ID = np.zeros((number_of_elements,)).astype(int)
         ant_name = []
         antenna_to_node_mapping = np.zeros((number_of_elements,), dtype=int)
@@ -228,10 +248,12 @@ class Antenna_Array(Saveable):
         P_type_vector = np.zeros((number_of_elements,), dtype=str)
 
         # Calculate LCS position of the antenna element in the left upper corner
+
         lower_left_corner_element_y_poistion =  (-((N-1)*dh_m*Ng + (Ng-1)*dgh_m) / 2).astype(np.single)
         lower_left_corner_element_z_poistion =  (-((M-1)*dv_m*Mg + (Mg-1)*dgv_m) / 2).astype(np.single)
 
         # Calculate LCS position of all the other antenna elements
+
         index = 0
         for node_index in range (0, number_of_nodes):
 
@@ -239,16 +261,20 @@ class Antenna_Array(Saveable):
 
             # For the moment, dual polarization is only considered when using TR38.901.
             # We generate the channel for the 2 polarizations using Sionna and sum the two channels per antenna element to get just one channel
-            # See line h_freq = tf.reduce_sum(h_freq, axis=1) in channels.py
+            # See line h_freq = torch.sum(h_freq, dim=1) in channels.py
             if P[node_index] == 'single' or P[node_index] == 'dual':
                 P_num = 1
-            else:
+            else :
                 P_num = 2
 
             for Mg_index in range(0,Mg[node_index]):
+
                 for Ng_index in range(0,Ng[node_index]):
+
                     for P_index in range(0,P_num):
+
                         for M_index in range(0,M[node_index]):
+
                             for N_index in range(0,N[node_index]):
 
                                 ant_ID[index] = index
@@ -262,24 +288,19 @@ class Antenna_Array(Saveable):
                                 P_type_vector[index] = P_index
 
                                 antenna_element_LCS_index[index] = [0, N_index, M_index]
-                                antenna_element_LCS_position_m[index,1] = \
-                                    lower_left_corner_element_y_poistion[node_index] + (Ng_index*(N[node_index]-1) + N_index) * dh_m[node_index] + Ng_index*dgh_m[node_index]
-                                antenna_element_LCS_position_m[index,2] = \
-                                    lower_left_corner_element_z_poistion[node_index] + (Mg_index*(M[node_index]-1) + M_index) * dv_m[node_index] + Mg_index*dgv_m[node_index]
+                                antenna_element_LCS_position_m[index,1] = lower_left_corner_element_y_poistion[node_index] + (Ng_index*(N[node_index]-1) + N_index) * dh_m[node_index] + Ng_index*dgh_m[node_index]
+                                antenna_element_LCS_position_m[index,2] = lower_left_corner_element_z_poistion[node_index] + (Mg_index*(M[node_index]-1) + M_index) * dv_m[node_index] + Mg_index*dgv_m[node_index]
 
                                 index += 1
                                 ant_index_in_node += 1
 
         #Store calculations in data frame
-        d = {"ID": ant_ID, "name": ant_name, "host_node_ID": antenna_to_node_mapping, "ID_in_host_node": ant_ID_in_node,  
-             "Mg": Mg_vector, "Ng": Ng_vector, "M": M_vector, "N": N_vector, 
-             "P_type": P_type_vector, "LCS_index_x": antenna_element_LCS_index[:,0], 
-             "LCS_index_y": antenna_element_LCS_index[:,1], "LCS_index_z": antenna_element_LCS_index[:,2], 
-             "LCS_position_x_m": antenna_element_LCS_position_m[:,0], "LCS_position_y_m": antenna_element_LCS_position_m[:,1], "LCS_position_z_m": antenna_element_LCS_position_m[:,2]}
+
+        #[ 'node_%d'%(node_vector[x]) for x in range(0,node_vector)]
+        d = {"ID": ant_ID, "name": ant_name, "host_node_ID": antenna_to_node_mapping, "ID_in_host_node": ant_ID_in_node,  "Mg": Mg_vector, "Ng": Ng_vector, "M": M_vector, "N": N_vector, "P_type": P_type_vector, "LCS_index_x": antenna_element_LCS_index[:,0], "LCS_index_y": antenna_element_LCS_index[:,1], "LCS_index_z": antenna_element_LCS_index[:,2], "LCS_position_x_m": antenna_element_LCS_position_m[:,0], "LCS_position_y_m": antenna_element_LCS_position_m[:,1], "LCS_position_z_m": antenna_element_LCS_position_m[:,2]}
         df_antenna_arrays_LCS = pd.DataFrame(d)
 
         return df_antenna_arrays_LCS, antenna_to_node_mapping
-
 
     def calculate_antenna_element_GCS_positions(self,
                                                 node_type: str,
@@ -297,35 +318,35 @@ class Antenna_Array(Saveable):
         z_antenna_pos_m_lcs = antenna_element_LCS_position_m[:, 2]
         
 
-        # Convert angle from degree to radian
-        # degrees -> radians
+        # Conver angle from degree to radian
+        # gradi -> radianti
         α_arr = np.deg2rad(alpha_bearing_deg)
         β_arr = np.deg2rad(beta_downtilt_deg)
         γ_arr = np.deg2rad(gamma_slant_deg)
 
 
         # Checks of the shape of the angles vs antenna to node mapping. This ensure that each node has one set of angles
-        assert np.array_equal(np.arange(α_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in bearing angles shape vs antenna to node mapping"
-        assert np.array_equal(np.arange(β_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in downtilt angles shape vs antenna to node mapping"
-        assert np.array_equal(np.arange(γ_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in slant angles shape vs antenna to node mapping"
+        assert np.array_equal( np.arange(α_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in bearing angles shape vs antenna to node mapping"
+        assert np.array_equal( np.arange(β_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in downtilt angles shape vs antenna to node mapping"
+        assert np.array_equal( np.arange(γ_arr.shape[0]), np.unique(antenna_to_node_mapping)),  "Error in slant angles shape vs antenna to node mapping"
         assert α_arr.shape[0] == node_positions_m.shape[0],  "Error in downtilt angles shape vs node positions shape"
         assert antenna_to_node_mapping.shape[0] == antenna_element_LCS_position_m.shape[0], "Error: antenna_to_node_mapping length vs number of antenna elements"
 
         # Define Rotation Matrix 
         def Rz(a):
             return np.array([[np.cos(a), -np.sin(a), 0],
-                             [np.sin(a),  np.cos(a), 0],
-                             [0,          0,         1]], dtype=np.float64)
+                            [np.sin(a),  np.cos(a), 0],
+                            [0,          0,         1]], dtype=np.float64)
 
         def Ry(b):
-            return np.array([[ np.cos(b),  0, np.sin(b)],
-                             [ 0,          1, 0        ],
-                             [-np.sin(b),  0, np.cos(b)]], dtype=np.float64)
+            return np.array([[ np.cos(b), 0, np.sin(b)],
+                            [ 0,          1, 0        ],
+                            [-np.sin(b),  0, np.cos(b)]], dtype=np.float64)
 
         def Rx(c):
-            return np.array([[1,             0,           0     ],
-                             [0,         np.cos(c),   -np.sin(c)],
-                             [0,         np.sin(c),    np.cos(c)]], dtype=np.float64)
+            return np.array([[1,          0,             0        ],
+                            [0,         np.cos(c),   -np.sin(c)],
+                            [0,             np.sin(c),   np.cos(c)]], dtype=np.float64)
 
         
 
@@ -373,19 +394,116 @@ class Antenna_Array(Saveable):
 
         return antenna_element_GCS_position_m
 
+
+
+    def calculate_antenna_element_GCS_positions_oldImplementation(self, 
+                                                                  node_type, 
+                                                                  node_positions_m, 
+                                                                  alpha_bearing_deg, 
+                                                                  beta_downtilt_deg, 
+                                                                  gamma_slant_deg,
+                                                                  antenna_to_node_mapping, 
+                                                                  antenna_element_LCS_position_m):   
+        raise DeprecationWarning(f"In {self.__class__.__name__} old version calculate_antenna_element_GCS_positions deprecated. Use the new calculate_antenna_element_GCS_positions method instead.")
+        # Initialise antenna element GCS positions 
+        
+        antenna_element_GCS_position_m = np.zeros((np.size(antenna_element_LCS_position_m,0),3), dtype=np.single)  
+      
+
+        # Count the number of antennas per node
+               
+        _ , counts = np.unique(antenna_to_node_mapping, return_counts=True)
+
+        # Get azimuth rotation
+
+        
+        alpha_rad_vector = np.radians(-alpha_bearing_deg[antenna_to_node_mapping])
+        # Get zenith rotaton
+
+        beta_rad_vector = np.radians(-beta_downtilt_deg[antenna_to_node_mapping]+90) 
+
+        # Get slant rotation - Usually MIMO panels do not have a slant rotation
+        gamma_rad_vector = np.radians(-gamma_slant_deg[antenna_to_node_mapping])
+
+        coscos_vector = np.cos(alpha_rad_vector)*np.cos(beta_rad_vector)
+        cossin_vector = np.cos(alpha_rad_vector)*np.sin(beta_rad_vector)
+        sincos_vector = np.sin(alpha_rad_vector)*np.cos(beta_rad_vector)
+        sinsin_vector = np.sin(alpha_rad_vector)*np.sin(beta_rad_vector)
+
+        # Compute rotation matrix - See equation 7.1-5 of TR 38.901 V17.0.0
+                    
+        R_inv_vector = np.array([[ coscos_vector                                                        , sincos_vector                                                        , -1*np.sin(beta_rad_vector)], 
+                            [ cossin_vector*np.sin(gamma_rad_vector) - np.sin(alpha_rad_vector)*np.cos(gamma_rad_vector), sinsin_vector*np.sin(gamma_rad_vector) + np.cos(alpha_rad_vector)*np.cos(gamma_rad_vector), np.cos(beta_rad_vector)*np.sin(gamma_rad_vector) ],
+                            [ cossin_vector*np.cos(gamma_rad_vector) + np.sin(alpha_rad_vector)*np.sin(gamma_rad_vector), sinsin_vector*np.cos(gamma_rad_vector) - np.cos(alpha_rad_vector)*np.sin(gamma_rad_vector), np.cos(beta_rad_vector)*np.cos(gamma_rad_vector) ]])
+
+
+        # Compute LCS to GCS rotation for all antennas of the nodes    
+        antenna_element_GCS_position_m = np.einsum('ijk, kj -> ki', R_inv_vector, antenna_element_LCS_position_m)
+        
+
+        # values, counts = np.unique(antenna_to_node_mapping, return_counts=True)
+        # for node_index in values:
+            
+        #     # Get azimuth rotation      
+            
+        #     alpha_rad = np.radians(-alpha_bearing_deg[node_index])
+        #     # Get zenith rotaton
+            
+        #     beta_rad = np.radians(-beta_downtilt_deg[node_index]+90) 
+            
+        #     # Get slant rotation - Usually MIMO panels do not have a slant rotation
+        #     gamma_rad = np.radians(-gamma_slant_deg[node_index])
+            
+        #     # Precompute some products
+            
+        #     coscos = np.cos(alpha_rad)*np.cos(beta_rad)
+        #     cossin = np.cos(alpha_rad)*np.sin(beta_rad)
+        #     sincos = np.sin(alpha_rad)*np.cos(beta_rad)
+        #     sinsin = np.sin(alpha_rad)*np.sin(beta_rad)
+            
+        #     # Compute rotation matrix - See equation 7.1-5 of TR 38.901 V17.0.0
+                        
+        #     R_inv = np.array([[ coscos                                                        , sincos                                                        , -1*np.sin(beta_rad)], 
+        #                       [ cossin*np.sin(gamma_rad) - np.sin(alpha_rad)*np.cos(gamma_rad), sinsin*np.sin(gamma_rad) + np.cos(alpha_rad)*np.cos(gamma_rad), np.cos(beta_rad)*np.sin(gamma_rad) ],
+        #                       [ cossin*np.cos(gamma_rad) + np.sin(alpha_rad)*np.sin(gamma_rad), sinsin*np.cos(gamma_rad) - np.cos(alpha_rad)*np.sin(gamma_rad), np.cos(beta_rad)*np.cos(gamma_rad) ]])
+            
+        #     #R = np.transpose(R_inv)
+            
+        #     # Get antennas of the node
+            
+        #     mask_antennas_of_selected_cells = antenna_to_node_mapping == node_index
+        #     antenna_element_LCS_position_m_filtered = antenna_element_LCS_position_m[mask_antennas_of_selected_cells]            
+            
+
+        #     # Compute LCS to GCS rotation for all antennas of the node 
+        #     antenna_element_GCS_position_m_filtered = np.array([ np.matmul(R_inv, np.transpose((antenna_element_LCS_position_m_filtered[i,:]))) for i in range(0,np.size(antenna_element_LCS_position_m_filtered,0)) ])
+        #     antenna_element_GCS_position_m[mask_antennas_of_selected_cells] = antenna_element_GCS_position_m_filtered
+        
+        #Store calculations in array 
+               
+        node_positions_mat_m = np.repeat(node_positions_m, counts, axis=0)
+        antenna_element_GCS_position_m += node_positions_mat_m 
+       
+        return antenna_element_GCS_position_m
     
-    def derive_unique_antenna_array_types(self, site_deployment_obj, deployment_obj):
+    def derive_unique_antenna_array_types(self, 
+                                          site_deployment_obj,
+                                          deployment_obj):
        
         # Antenna array type list
+        
         antenna_array_types = []
         
         # Indeces indicating the antenna array type of each node 
+       
         antenna_array_type_index = np.ones(len(deployment_obj.df_ep)).astype(int)     
         
         # Carrier frequency of each array type
+        
         antenna_array_dl_carrier_frequency_GHz = []
         
         # Group by antenna array characterstics to find the different pannels
+        
         grouped = deployment_obj.df_ep.groupby(['dl_carrier_frequency_GHz', #0
                                  'dl_carrier_wavelength_m', #1
                                  # 'antenna_pattern_model', #2
@@ -408,8 +526,10 @@ class Antenna_Array(Saveable):
                                  'antenna_pattern_model']) #19 13
         
         # Create and store objects
+        
         index = 0
         for model_params, group in grouped:
+            
             antenna_array_type_index[group['ID']] = index
             
             if model_params[2] == 1 : 
@@ -474,17 +594,19 @@ class Antenna_Array(Saveable):
                     antenna_pattern_model = 'iso'
                 else:
                     raise ValueError("self.node_type must be either 'cell' or 'ue.")
-                unique_antenna_array = sionna.phy.antennas.PlanarArray(num_rows=model_params[4],
-                                                             num_cols=model_params[5],
-                                                             vertical_spacing=element_vertical_spacing_aux,
-                                                             horizontal_spacing=element_horizontal_spacing_aux,
-                                                             pattern=antenna_pattern_model,
-                                                             polarization=model_params[7])
+                unique_antenna_array = PlanarArray(num_rows=model_params[4],
+                                                   num_cols=model_params[5],
+                                                   vertical_spacing=element_vertical_spacing_aux,
+                                                   horizontal_spacing=element_horizontal_spacing_aux,
+                                                   #pattern='tr38901',
+                                                   pattern=antenna_pattern_model,
+                                                   polarization=model_params[7])
 
             else:
                 raise ValueError("Unsupported entry for 'antenna_pattern_model'. It must be '3GPPTR38_901', '3GPPTR36_814' or 'Ray_tracing'.")
 
             ####################################################################
+
             antenna_array_types.append(unique_antenna_array)
             antenna_array_dl_carrier_frequency_GHz.append(model_params[0])
             

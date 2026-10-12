@@ -4,11 +4,7 @@ Created on Fri Nov  3 15:52:45 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import time
@@ -22,7 +18,6 @@ from giulia.event_driven.snapshot_control import Snapshot_control
 from giulia.fs import phy_file, results_file
 from giulia.tools.tools import log_calculations_time
 from giulia.outputs.saveable import Saveable
-
 
 class Lut_Bler_Vs_Sinr(Saveable):
     """
@@ -51,10 +46,12 @@ class Lut_Bler_Vs_Sinr(Saveable):
         self.par2: np.ndarray = np.array([])             # Parameter 2 for BLER calculation
 
 
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["bler_table"]
-
+        return []
 
     def process(self, rescheduling_us: int = -1) -> None:
         """
@@ -68,7 +65,9 @@ class Lut_Bler_Vs_Sinr(Saveable):
         # Extract MCS parameters from the resource object
         self.modulation_and_coding_schemes: list[str] = self.resource_mcs_obj.modulation_and_coding_schemes
         self.number_of_modulation_and_coding_schemes: int = self.resource_mcs_obj.number_of_modulation_and_coding_schemes
-        self.modulation_index_per_modulation_and_coding_scheme: np.ndarray = self.resource_mcs_obj.modulation_index_per_modulation_and_coding_scheme
+        self.modulation_index_per_modulation_and_coding_scheme: np.ndarray = (
+            self.resource_mcs_obj.modulation_index_per_modulation_and_coding_scheme
+        )
         self.transport_block_sizes_in_prbs: np.ndarray = self.resource_mcs_obj.transport_block_sizes_in_prbs
         self.number_of_transport_block_sizes: int = self.resource_mcs_obj.number_of_transport_block_sizes
 
@@ -89,19 +88,24 @@ class Lut_Bler_Vs_Sinr(Saveable):
                 index += 1
 
         # Generate BLER vs SINR LUTs
-        bler_per_sinr_mcs: np.ndarray = \
-            np.array([self.calculate_bler_per_ue(100, mcs_index, np.arange(-10, 30, 0.1)) 
-                      for mcs_index in range(self.number_of_modulation_and_coding_schemes)], dtype=float).T
+        bler_per_sinr_mcs: np.ndarray = np.array(
+            [self.calculate_bler_per_ue(100, mcs_index, np.arange(-10, 30, 0.1))
+             for mcs_index in range(self.number_of_modulation_and_coding_schemes)],
+            dtype=float
+        ).T
 
         # Save LUTs if snapshot control and plotting conditions are met
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file = results_file(self.simulation_config_obj.project_name, 'to_plot_lut_bler_vs_sinr')
-            np.savez(file, modulation_and_coding_schemes=self.modulation_and_coding_schemes, bler_per_sinr_mcs=bler_per_sinr_mcs)
+            np.savez(
+                file,
+                modulation_and_coding_schemes=self.modulation_and_coding_schemes,
+                bler_per_sinr_mcs=bler_per_sinr_mcs
+            )
 
         ### End
         log_calculations_time('BLER vs SINR LUTs', t_start)
-
 
     def calculate_bler_per_ue_and_mcs(self, effective_sinr_per_ue_mcs: np.ndarray) -> np.ndarray:
         """
@@ -114,12 +118,11 @@ class Lut_Bler_Vs_Sinr(Saveable):
         Returns:
             BLER values per UE and MCS. Shape: (Number of UEs, Number of MCSs).
         """
-        bler_per_ue_mcs: np.ndarray = \
-            np.array([self.calculate_bler_per_ue(100, mcs_index, effective_sinr_per_ue_mcs[:, modulation_index])
-                        for mcs_index, modulation_index in enumerate(self.modulation_index_per_modulation_and_coding_scheme)], dtype=float).T
-        
+        bler_per_ue_mcs: np.ndarray = np.array([
+            self.calculate_bler_per_ue(100, mcs_index, effective_sinr_per_ue_mcs[:, modulation_index])
+            for mcs_index, modulation_index in enumerate(self.modulation_index_per_modulation_and_coding_scheme)
+        ], dtype=float).T
         return bler_per_ue_mcs
-
 
     def calculate_bler_per_ue(self, tb_size: int, mcs: int, sinr_dB: np.ndarray) -> np.ndarray:
         """
@@ -152,7 +155,6 @@ class Lut_Bler_Vs_Sinr(Saveable):
         warnings.filterwarnings('ignore')
         bler = 1 / (np.exp((sinr_dB - par1) * par2) + 1)
         return bler
-
 
     def calculate_selected_mcs_per_ue(self, bler_per_ue_and_mcs: np.ndarray, bler_target: float) -> np.ndarray:
         """

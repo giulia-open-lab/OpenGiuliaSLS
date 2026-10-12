@@ -39,6 +39,7 @@ class Precoded_Channel_Gain(Saveable):
         cell_antenna_array_structure_obj: Any,
         beam_conf_obj: Any,
         ue_deployment_obj: Any,
+        time_frequency_resource_obj,
         channel_gain_ue_to_cell_obj: Any,
         array_steering_vector_ue_to_cell_obj: Optional[Any] = None,
     ):
@@ -66,6 +67,7 @@ class Precoded_Channel_Gain(Saveable):
         self.network_deployment_obj: Any = network_deployment_obj
         self.cell_antenna_array_structure_obj: Any = cell_antenna_array_structure_obj
         self.beam_conf_obj: Any = beam_conf_obj
+        self.time_frequency_resource_obj: Any = time_frequency_resource_obj
         self.ue_deployment_obj: Any = ue_deployment_obj
         self.channel_gain_ue_to_cell_obj: Any = channel_gain_ue_to_cell_obj
         self.array_steering_vector_ue_to_cell_obj: Optional[Any] = array_steering_vector_ue_to_cell_obj
@@ -73,10 +75,12 @@ class Precoded_Channel_Gain(Saveable):
         # Output storage
         self.precoded_channel_gain_results_per_frequency_layer: Dict[str, Dict[str, Any]] = {}
 
-
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["precoded_channel_gain_results_per_frequency_layer"]
+        return []
     
 
     def process(self, rescheduling_us: int = -1) -> int:
@@ -111,11 +115,14 @@ class Precoded_Channel_Gain(Saveable):
         for frequency_key, frequency_layer_data in self.channel_gain_results.items():
             # Extract channel gain data for the current frequency layer
             dl_channel_gain_ueAnt_to_cellAnt_complex: np.ndarray = frequency_layer_data["dl_channel_gain_ueAnt_to_cellAnt_complex"]
+
+            # Get the corresponding resource information for the current frequency layer
+            time_frequency_resource_info: Dict[str, Any] = self.time_frequency_resource_obj.dl_frequency_layer_info[frequency_key]
             
-            cell_IDs_in_frequency: np.ndarray = frequency_layer_data["cell_IDs"]
-            cells_in_frequency_mask: np.ndarray = frequency_layer_data["cells_in_frequency_mask"]
-            available_PRBs_for_frequency: int = frequency_layer_data["available_PRBs"]
-            number_of_ues_in_frequency: int = frequency_layer_data["num_ues"]
+            cell_IDs_in_frequency: np.ndarray = time_frequency_resource_info["cell_IDs"]
+            cells_in_frequency_mask: np.ndarray = time_frequency_resource_info["cells_in_frequency_mask"]
+            max_available_PRBs_for_frequency: int = time_frequency_resource_info["max_available_PRBs"]
+            number_of_ues_in_frequency: int = time_frequency_resource_info["num_ues"]
             number_of_beams_in_frequency: int = np.sum(np.isin(self.beam_to_node_mapping, cell_IDs_in_frequency))
             
             # Filter data for selected cells in frequency layer
@@ -125,7 +132,10 @@ class Precoded_Channel_Gain(Saveable):
             codebook_index_to_node_mapping = self.codebook_index_to_node_mapping[cells_in_frequency_mask]
 
             # Initialize tensor for precoded channel gains
-            precoded_channel_gain_b_to_a_dB: np.ndarray = np.zeros((available_PRBs_for_frequency, number_of_ues_in_frequency, number_of_beams_in_frequency),dtype=np.single)
+            precoded_channel_gain_b_to_a_dB: np.ndarray = np.zeros(
+                (max_available_PRBs_for_frequency, number_of_ues_in_frequency, number_of_beams_in_frequency),
+                dtype=np.single
+            )
 
             # Process data for each antenna pattern model
             for antenna_pattern_model in np.unique(self.antenna_pattern_models):
@@ -138,6 +148,10 @@ class Precoded_Channel_Gain(Saveable):
                 A_m_dB_filtered: np.ndarray = A_m_dB[mask_cell]
                 antenna_to_node_a_mapping_filtered: np.ndarray = antenna_to_node_a_mapping[np.isin(antenna_to_node_a_mapping, selected_cell_IDs)]
                 beam_to_node_mapping_filtered: np.ndarray = beam_to_node_mapping[np.isin(beam_to_node_mapping, selected_cell_IDs)]
+                
+                codebook_index_to_node_mapping_filtered: np.ndarray = codebook_index_to_node_mapping[mask_cell]
+
+                codebook_index_to_node_mapping_filtered = codebook_index_to_node_mapping[mask_cell]
 
                 codebook_index_to_node_mapping_filtered = codebook_index_to_node_mapping[mask_cell]
 
@@ -155,7 +169,9 @@ class Precoded_Channel_Gain(Saveable):
                         )
                 else:
                     precoded_channel_gain_b_to_a_dB[:, :, np.isin(beam_to_node_mapping, selected_cell_IDs)] = \
-                        tools.mW_to_dBm_torch(torch.pow(torch.abs(torch.tensor(dl_channel_gain_filtered, device=self.device)), 2)).cpu().numpy()
+                        tools.mW_to_dBm_torch(
+                            torch.pow(torch.abs(torch.tensor(dl_channel_gain_filtered, device=self.device)), 2)
+                        ).cpu().numpy()
 
             # Store results for the frequency layer
             self.precoded_channel_gain_results_per_frequency_layer[frequency_key] = copy.deepcopy(frequency_layer_data)
@@ -167,7 +183,10 @@ class Precoded_Channel_Gain(Saveable):
         # Save results for plotting if needed
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
-            file_name: str = results_file(self.simulation_config_obj.project_name, f"to_plot_{self.beam_type}_precoded_channel_gain_{self.compute_type}",)
+            file_name: str = results_file(
+                self.simulation_config_obj.project_name,
+                f"to_plot_{self.beam_type}_precoded_channel_gain_{self.compute_type}",
+            )
             np.savez(file_name, precoded_channel_gain_results=self.precoded_channel_gain_results_per_frequency_layer)
         
         # Log elapsed time
@@ -206,19 +225,43 @@ class Precoded_Channel_Gain(Saveable):
         num_beams = np.size(beam_to_node_mapping)
     
         # Allocate output tensor on GPU
-        precoded_channel_gain_b_to_a_dB = torch.zeros((num_UE_antennas, num_cell_antennas, num_beams),dtype=torch.float32,device=self.device)
+        precoded_channel_gain_b_to_a_dB = torch.zeros(
+            (num_UE_antennas, num_cell_antennas, num_beams),
+            dtype=torch.float32,
+            device=self.device
+        )
     
         for cell_index in range(np.size(codebook_indexing, 0)):
             # Get the codebook for the current cell
             cell_codebook = codebook_dictionary[codebook_indexing[cell_index]]
-            cell_codebook_torch = torch.tensor(cell_codebook[np.newaxis, np.newaxis, :, :], dtype=torch.complex32, device=self.device)
+            cell_codebook_torch = torch.tensor(
+                cell_codebook[np.newaxis, np.newaxis, :, :],
+                dtype=torch.complex32,
+                device=self.device
+            )
     
             # Get the complex channel gains for the current cell
-            cell_channel_gain = channel_gain_ueAnt_to_cellAnt_complex[:, :, antenna_to_node_a_mapping == selected_cell_IDs[cell_index]]
-            cell_channel_gain_torch = torch.tensor(cell_channel_gain[:, :, :, np.newaxis], dtype=torch.complex64, device=self.device)
+            cell_channel_gain = channel_gain_ueAnt_to_cellAnt_complex[
+                :, :, antenna_to_node_a_mapping == selected_cell_IDs[cell_index]
+            ]
+            cell_channel_gain_torch = torch.tensor(
+                cell_channel_gain[:, :, :, np.newaxis],
+                dtype=torch.complex64,
+                device=self.device
+            )
     
             # Compute the precoded channel gains in dB
-            gain_dB_torch = tools.mW_to_dBm_torch(torch.pow(torch.abs(torch.sum(cell_codebook_torch * cell_channel_gain_torch, dim=cell_channel_gain.ndim - 1)),2))
+            gain_dB_torch = tools.mW_to_dBm_torch(
+                torch.pow(
+                    torch.abs(
+                        torch.sum(
+                            cell_codebook_torch * cell_channel_gain_torch,
+                            dim=cell_channel_gain.ndim - 1
+                        )
+                    ),
+                    2
+                )
+            )
     
             # Assign the result to the corresponding beam indices
             beam_mask = beam_to_node_mapping == selected_cell_IDs[cell_index]
@@ -226,38 +269,161 @@ class Precoded_Channel_Gain(Saveable):
     
             # Cleanup
             del cell_codebook_torch, cell_channel_gain_torch, gain_dB_torch
-            if torch.cuda.is_available() and (cell_index % 10 == 0 or cell_index == np.size(codebook_indexing, 0) - 1):
+            if torch.cuda.is_available() and (
+                cell_index % 10 == 0 or cell_index == np.size(codebook_indexing, 0) - 1
+            ):
                 torch.cuda.empty_cache()
     
         # Transfer result to CPU and return as NumPy array
         out = precoded_channel_gain_b_to_a_dB.cpu().numpy()
         del precoded_channel_gain_b_to_a_dB
     
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
     
-        return out  
+        return out
+    
+    
+    # def calculate_precoded_channel_gains(
+    #     self,
+    #     selected_cell_IDs: np.ndarray,
+    #     codebook_dictionary: Dict[Any, np.ndarray],
+    #     A_m_dB: np.ndarray,
+    #     codebook_indexing: np.ndarray,
+    #     beam_to_node_mapping: np.ndarray,
+    #     antenna_to_node_a_mapping: np.ndarray,
+    #     channel_gain_ueAnt_to_cellAnt_complex: np.ndarray,
+    # ) -> np.ndarray:
+    #     """
+    #     Calculates the precoded channel gains for multiple cells and beams.
+    
+    #     Args:
+    
+    #     Returns:
+    #         np.ndarray:
+    #             A numpy array representing the calculated precoded channel gains for all beams.
+    #             Shape: (num_UE_antennas, num_cells, num_beams).
+    #     """
+    #     # Placeholder to store the precoded channel gain results
+    #     number_of_beams_in_selection: int = np.sum(np.size(beam_to_node_mapping))
+    #     precoded_channel_gain_b_to_a_dB: np.ndarray = np.zeros(
+    #         (
+    #             np.size(channel_gain_ueAnt_to_cellAnt_complex, 0),  # num_UE_antennas
+    #             np.size(channel_gain_ueAnt_to_cellAnt_complex, 1),  # num_cell_antennas
+    #             number_of_beams_in_selection,  # num_beams
+    #         ),
+    #         dtype=np.single,
+    #     )
+    
+    #     # Process each cell
+    #     from tqdm import tqdm
+    #     for cell_index in tqdm(range(np.size(codebook_indexing, 0)), desc=f"{self.compute_type}")  :
+    #         # Get precoders for the current cell
+    #         cell_codebook: np.ndarray = codebook_dictionary[codebook_indexing[cell_index]]
+    
+    #         # Get channel gain for the current cell
+    #         cell_channel_gain_ueAnt_to_cellAnt_complex: np.ndarray = channel_gain_ueAnt_to_cellAnt_complex[
+    #             :, :, antenna_to_node_a_mapping == selected_cell_IDs[cell_index]
+    #         ]
+    
+    #         # Calculate precoded channel gain for the current cell
+    #         out = self.calculate_precoded_channel_gain_per_cell_torch(
+    #                 cell_codebook,
+    #                 cell_channel_gain_ueAnt_to_cellAnt_complex
+    #             )
+    #             #.cpu()
+    #             #.numpy()
+    #         #)
+            
+    #         precoded_channel_gain_b_to_a_dB[:, :, beam_to_node_mapping == selected_cell_IDs[cell_index]] = out.cpu().numpy()
+            
+    #         del out
+            
+    #         # Clean PyTorch GPU memory
+    #         if torch.cuda.is_available() and cell_index%5 == 0:
+    #             torch.cuda.empty_cache()
+        
+    #     if torch.cuda.is_available():
+    #         torch.cuda.empty_cache()
+                
+    #     return precoded_channel_gain_b_to_a_dB  
+    
+    def calculate_precoded_channel_gain_per_cell_torch(
+        self,
+        cell_codebook: np.ndarray,
+        cell_channel_gain_ueAnt_to_cellAnt_complex: np.ndarray
+    ) -> torch.Tensor:
+        """
+        Calculates the precoded channel gain for a single cell using PyTorch for GPU acceleration.
+    
+        Args:
+    
+        Returns:
+            torch.Tensor:
+                A tensor representing the calculated precoded channel gains in dB.
+                Shape: (num_UE_antennas, num_frequencies, num_beams).
+        """
+        # Add the precoder gain to the array factor gain
+        cell_precoded_channel_gain_b_to_a_linear: torch.Tensor = torch.pow(
+            torch.abs(
+                torch.sum(
+                    torch.tensor(cell_codebook[np.newaxis, np.newaxis, :, :], dtype=torch.float32, device=self.device) 
+                    * torch.tensor(cell_channel_gain_ueAnt_to_cellAnt_complex[:, :, :, np.newaxis], dtype=torch.float32, device=self.device),
+                    axis=cell_channel_gain_ueAnt_to_cellAnt_complex.ndim - 1,
+                )
+            ),
+            2,
+        )
+    
+        # Calculate the array response gains in dB    
+        return  tools.mW_to_dBm_torch(cell_precoded_channel_gain_b_to_a_linear)   
     
         
     def example_precoding_gains(self, cell_index, beam_conf_obj, example_cell_channel_H, example_cell_channel_V):
         
         # Set parameters for the example 
+        
         azimuth_deg = np.arange(-180, 180, 180/500)
         zenith_deg = np.arange(0, 180, 180/1000)
         
         A_m_dB = self.A_m_dB[cell_index]
         
         # Get precoders in cell
+        
         cell_codebook = beam_conf_obj.codebook_dictionary[self.codebook_indexing[cell_index]] 
          
         # Get precoder plus array response gain in the H plane - we make a cut in the V-plane in the direction of the beta_downtilit
+        
         precoded_channel_gain_b_to_a_dB_H =\
-            self.calculate_precoded_channel_gain_per_cell(cell_codebook, example_cell_channel_H, A_m_dB)  
+            self.calculate_precoded_channel_gain_per_cell(cell_codebook,
+                                                          example_cell_channel_H,
+                                                          A_m_dB)  
         
         # Get precoder plus array response gain in the V plane - we make a cut in the H-plane in the direction 0 degree aziimuth
+        
         precoded_channel_gain_b_to_a_dB_V =\
-            self.calculate_precoded_channel_gain_per_cell(cell_codebook, example_cell_channel_V, A_m_dB) 
+            self.calculate_precoded_channel_gain_per_cell(cell_codebook,
+                                                          example_cell_channel_V,
+                                                          A_m_dB) 
+        # if self.simulation_config_obj.plot == 1:
             
+        #     # Plot H plane 
+                 
+        #     plotting.plot_antenna_gain_4_figures(np.radians(azimuth_deg), tools.dBm_to_mW(precoded_channel_gain_b_to_a_dB_H[0, :, :]), [-np.pi / 2, np.pi / 2],
+        #                                          np.radians(azimuth_deg), precoded_channel_gain_b_to_a_dB_H[0,:,:], [-np.pi/2, np.pi/2],
+        #                                          beam_conf_obj.beam_type + ' beam gain - Horizontal')
+            
+    
+        #     # Plot V plane 
+            
+        #     plotting.plot_antenna_gain_4_figures(np.radians(zenith_deg), tools.dBm_to_mW(precoded_channel_gain_b_to_a_dB_V[0, :, :]), [0, np.pi],
+        #                                          np.radians(zenith_deg),precoded_channel_gain_b_to_a_dB_V[0,:,:], [0, np.pi],
+        #                                          beam_conf_obj.beam_type + ' beam gain - Vertical')   
+            
+            
+        #     # Plot V plane 
+            
+        #     plotting.plot_antenna_gain_2_figures(np.radians(azimuth_deg), tools.dBm_to_mW(precoded_channel_gain_b_to_a_dB_H[0, :, :]), [-np.pi / 2, np.pi / 2],
+        #                                          np.radians(zenith_deg), tools.dBm_to_mW(precoded_channel_gain_b_to_a_dB_V[0, :, :]), [0, np.pi],
+        #                                          beam_conf_obj.beam_type + ' beam gain - Horizontal / Vertical')      
 
     def calculate_precoded_channel_gain_per_cell(
         self,
@@ -286,12 +452,6 @@ class Precoded_Channel_Gain(Saveable):
             ),
             2,
         )
-
-        cell_precoded_channel_gain_b_to_a_linear: np.ndarray = np.sum(
-                    cell_codebook[np.newaxis, np.newaxis, :, :] 
-                    * cell_channel_gain_ueAnt_to_cellAnt_complex[:, :, :, np.newaxis],
-                    axis=cell_channel_gain_ueAnt_to_cellAnt_complex.ndim - 1,
-                ).abs().pow(2)
     
         # Calculate the array response gains in dB
         cell_precoded_channel_gain_b_to_a_dB: np.ndarray = tools.mW_to_dBm(cell_precoded_channel_gain_b_to_a_linear)
@@ -310,3 +470,4 @@ class Precoded_Channel_Gain_CSI_RS_ue_to_cell(Precoded_Channel_Gain):
 
 class Precoded_Channel_Gain_CSI_RS_no_fast_fading_ue_to_cell(Precoded_Channel_Gain):
     pass
+

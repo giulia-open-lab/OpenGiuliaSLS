@@ -15,132 +15,71 @@ To run the simulator, use the 'main.py' function and select the desired use case
 
 ---
 
-### Acknowledgements
-
-> This work was supported by the Generalitat Valenciana, Spain, through the CIDEGENT PlaGenT, Grant CIDEXG/2022/17, Project iTENTE, and the action CNS2023-144333, financed by MCIN/AEI/10.13039/501100011033 and the European Union ‘NextGenerationEU’/PRTR.
-
----
-
 ![Attention](https://a11ybadges.com/badge?text=Attention&logo=alert-triangle&badgeColor=rgb(235,180,28))
 
 **Please note that the simulator is currently under construction. We appreciate your patience.**
 
 ---
 
-### Cloning the repository
+### Dependencies
+This simulator is using Sionna 2 by NVIDIA (PyTorch-based), which requires PyTorch 2.9+ and Python 3.11+.
 
-This repo uses [Git LFS](https://git-lfs.com/) to store the precomputed shadowing maps (`*.mat` files under [`shadowing/`](shadowing/)). You must have Git LFS installed **before** cloning, otherwise the `.mat` files will be tiny pointer stubs and the simulator will fail to load them.
+The validated reference environment is Python 3.11 with Sionna 2.0.1, which brings in PyTorch 2.13.0 and
+its CUDA 13.0 runtime automatically. The curated direct dependencies are pinned in the installer scripts
+([`scripts/installer.sh`](scripts/installer.sh),
+[`scripts/installer_dependencies.sh`](scripts/installer_dependencies.sh)); the full, bit-for-bit Conda
+snapshot (including the exact PyTorch build) is in [`environment.yml`](environment.yml).
 
-1. Install Git LFS (one-time per machine):
+Other related packages: NumPy; Pandas; SciPy; Shapely; GeoPandas; PyProj; MatplotLib; Seaborn; scikit-learn; itur; Astropy; Trimesh; Mitsuba;
 
-   ```shell
-   # Windows (winget) or download from https://git-lfs.com/
-   winget install GitHub.GitLFS
-   # macOS
-   brew install git-lfs
-   # Debian/Ubuntu
-   sudo apt-get install git-lfs
-   ```
+See [Environment setup](docs/environment-setup.md) to know more about the installation process.
 
-   Then enable it for your user:
+### Shadowing maps and Git LFS
 
-   ```shell
-   git lfs install
-   ```
+The spatially correlated shadowing maps (14 `*.mat` files, about 2.7 GB) are **not** stored in the repository,
+neither in Git nor in Git LFS. Giulia looks for them in `shadowing/` at the root of the repository, or in the folder
+given by the `SHADOWING_FILES` environment variable, and stops with
+`AssertionError: No .mat files found in the shadowing directory.` when it finds none.
 
-2. Clone the repository normally — LFS files are fetched automatically:
+To get them, run:
 
-   ```shell
-   git clone https://github.com/david-lopez-perez/Giulia.git
-   ```
+```shell
+python scripts/download_shadowing_files.py
+```
 
-**Already cloned without LFS?** Run the following from inside the repo to download the real files:
+The download server is reachable only from the UPV network (or its VPN); otherwise, ask a UPV member to share the
+files. The script unpacks the archive into the root of the repository: check that the `*.mat` files end up inside
+`shadowing/` (move them there if needed), or set `SHADOWING_FILES` to the folder that contains them.
+
+[Git LFS](https://git-lfs.com/) is used only for the precomputed test references under `tests/references/`
+(about 665 MB), which are needed only to run the regression tests. To fetch them:
 
 ```shell
 git lfs install
 git lfs pull
 ```
 
-You can verify the shadowing maps are real (multi-MB) files and not pointer stubs with `git lfs ls-files`.
-
-### Dependencies
-This simulator is using Sionna by NVIDIA which requires TensorFlow 2.10-2.15 and Python 3.8-3.11. 
-
-Other related packages: NumPy; Pandas; SciPy; Simulus; Shapely; GeoPandas; MatplotLib; scikit-learn; itur;
-
-See [the official documentation](https://giulia-docs.arnaumora.com/setup-environment.html) to know more about the
-installation process.
-
 ### Running Giulia
 
 The easiest way to run Giulia is to use configuration files.
 Those allow you to easily select how to run Giulia, and which outputs you want to get.
 
-We provide an example inputs file with the default values for you to configure: [`config.example.yml`](config.example.yml)
-
-Then, run the following command:
-
-```shell
-python main.py
-```
-
-Please note that this command expects to be inside a valid environment with all the required dependencies installed.
-
-Giulia will by default try to find this file on the root of the repo, with the name: `config.yml`
-If you want to set a custom file, specify its full path in the command, for example:
+`main.py` reads `config.yml` at the root of the repository; if that file does not exist, it is created from the
+fully commented template [`config.example.yml`](config.example.yml). Note that the repository already contains a
+`config.yml`, which runs a 4G/5G multilayer scenario: this scenario is heavy and needs a GPU with a large memory.
+For a first, light run, use the template directly (ITU-R M.2135 UMa scenario):
 
 ```shell
 python main.py config.example.yml
 ```
 
-### Running examples directly (batches and scripts)
+Running `python main.py` without an argument uses `config.yml`. Both commands expect a valid environment with all
+the required dependencies installed.
 
-If instead you are interested in reproducing batch runs or scripts directly — for example to drive several scenarios from Python without going through the YAML config — run the example script directly:
-
-```shell
-python examples/giulia_EV.py
-```
-
-In this mode the YAML config is **not** consulted. Configuration comes entirely from command-line flags and the parser defaults defined in [`examples/giulia_EV.py`](examples/giulia_EV.py). Running it with no flags starts a simulation with the following defaults:
-
-- `preset`: `GiuliaStd`
-- `scenario_model`: `ITU_R_M2135_UMa`
-- `ue_playground_model`: `None` (uses the scenario's default playground)
-- `ue_distribution`: `uniform`
-- `ue_mobility`: `None` (static UEs)
-- `link_direction`: `downlink`
-- `wraparound`: `None`
-- `snapshots`: `2`
-- `enable_GPU`: `True`
-- `regression`: `False`
-- `log_level`: `0`
-- `save_results`: `1`
-- `plots`: `True`
-
-To run a different scenario or override any other default, pass the corresponding flag, e.g.:
-
-```shell
-python examples/giulia_EV.py --scenario_model 3GPPTR38_901_5G --ue_distribution uniform --snapshots 10
-```
-
-For driving several scenarios in a row, see [`examples/giulia_EV_batch.py`](examples/giulia_EV_batch.py), which imports `giulia_EV` and calls its `main(args)` once per scenario.
-
-#### Multilayer scenario naming convention
-
-In the multilayer scenario names under `3GPPTR38_901_*_multilayer`, the underscores are meaningful:
-
-- `4G5G` (no underscore between layers) — the listed layers are **colocated** at the same sites.
-- `4G_5G` (underscore between layers) — the listed layers are **non-colocated**; in this case the 5G layer is deployed on the UMi scenario.
-
-The same logic applies to the 6G variants:
-
-- `3GPPTR38_901_4G5G_multilayer` — 4G and 5G colocated.
-- `3GPPTR38_901_4G_5G_multilayer` — 4G and 5G non-colocated, 5G on UMi.
-- `3GPPTR38_901_4G_5G6G_multilayer` — 4G non-colocated from the 5G+6G pair, which is itself colocated.
-- `3GPPTR38_901_4G_5G_6G_multilayer` — 4G, 5G and 6G all non-colocated, with 5G and 6G on their respective UMi scenarios.
+Get more detailed information in the [Getting Started guide](GETTING_STARTED.md).
 
 ### Running tests
 
 Giulia is tested by running different models and distributions, and comparing them to some precomputed ones.
 
-Know more in the tests guide: [access](./docs/testing.md)
+Know more in the [tests guide](tests/README.md).

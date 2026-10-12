@@ -2,13 +2,7 @@
 """
 Created on Thu Feb  8 09:15:15 2024
 
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+@author: Usuario
 """
 
 import os
@@ -24,7 +18,7 @@ sys.path.insert(1, root_dir)
 from giulia.fs import results_file
 from giulia.plots import plotting
 
-project_name = "3GPPTR38_901_4G5G_multilayer" + "_uniform"
+project_name = "ITU_R_M2135_UMa" + "_uniform"
 folder_name = project_name
 
 #################################################
@@ -96,16 +90,36 @@ plotting.plot_antenna_arrays(project_name, node_type, antenna_to_node_mapping, a
 
 a_load = np.load(results_file(project_name, 'to_plot_distances_angles.npz'))
 
-to_plot = [a_load["distances_b_to_a_2d_m"], a_load["distance_b_to_a_2d_wraparound_m"], a_load["distances_b_to_a_3d_m"], a_load["distance_b_to_a_3d_wraparound_m"]]
-plotting.plot_CDF(project_name, to_plot, "Distance [m]",
-                  ["distances_2d_m", "distances_2d_wraparound_m", "distances_3d_m", "distances_3d_wraparound_m"],
-                  500)
+to_plot = [a_load["distances_b_to_a_2d_m"], 
+            a_load["distance_b_to_a_2d_wraparound_m"],
+            a_load["distances_b_to_a_3d_m"], 
+            a_load["distance_b_to_a_3d_wraparound_m"]]
+plotting.plot_CDF(project_name,
+                  to_plot, 
+                  "Distance [m]",
+                  ["distances_2d_m",
+                    "distances_2d_wraparound_m",
+                    "distances_3d_m", 
+                    "distances_3d_wraparound_m"],
+                  500)   
 
-to_plot = [a_load["azimuths_b_to_a_degrees"], a_load["azimuths_b_to_a_wraparound_degrees"]]
-plotting.plot_CDF(project_name, to_plot, "Azimuth [degrees]", ["azimuths_degrees", "azimuths_wraparound_degrees"],500) 
+to_plot = [a_load["azimuths_b_to_a_degrees"], 
+            a_load["azimuths_b_to_a_wraparound_degrees"]]
+plotting.plot_CDF(project_name,
+                  to_plot, 
+                  "Azimuth [degrees]",
+                  ["azimuths_degrees",
+                    "azimuths_wraparound_degrees"],
+                  500) 
 
-to_plot = [a_load["zeniths_b_to_a_degrees"], a_load["zeniths_b_to_a_wraparound_degrees"]]
-plotting.plot_CDF(project_name, to_plot, "Zenith [degrees]", ["zeniths_degrees", "zeniths_wraparound_degrees"],500) 
+to_plot = [a_load["zeniths_b_to_a_degrees"], 
+            a_load["zeniths_b_to_a_wraparound_degrees"]]
+plotting.plot_CDF(project_name,
+                  to_plot, 
+                  "Zenith [degrees]",
+                  ["zeniths_degrees",
+                    "zeniths_wraparound_degrees"],
+                  500) 
 
 
 #################################################
@@ -113,8 +127,8 @@ plotting.plot_CDF(project_name, to_plot, "Zenith [degrees]", ["zeniths_degrees",
 #################################################
 
 a_load = np.load(results_file(project_name, 'to_plot_antenna_pattern.npz'))
-plotting.plot_antenna_gain_4_figures(np.radians(a_load["azimuth_deg"]), a_load["A_h_dB"], [-np.pi, np.pi], 
-                                     np.radians(a_load["zenith_deg"]), a_load["A_v_dB"], [0, np.pi], 
+plotting.plot_antenna_gain_4_figures(np.radians(a_load["azimuth_deg"]), a_load["A_h_dB"], [-np.pi, np.pi],  #['-pi', '-pi/2', '0', 'pi/2', 'pi', ]
+                                     np.radians(a_load["zenith_deg"]), a_load["A_v_dB"], [0, np.pi],  # ['0', 'pi/4', 'pi/2', '3pi/4', 'pi']
                                       'Antenna pattern gain')  
 
 
@@ -125,7 +139,11 @@ plotting.plot_antenna_gain_4_figures(np.radians(a_load["azimuth_deg"]), a_load["
 a_load = np.load(results_file(project_name, 'to_plot_antenna_pattern_gains.npz'))
 
 to_plot = [a_load["antenna_pattern_gain_b_to_a_dB"]]
-plotting.plot_CDF(project_name, to_plot, "Antenna pattern gain [dB]", ["antenna_pattern_gain_dB"], 500) 
+plotting.plot_CDF(project_name,
+                  to_plot, 
+                  "Antenna pattern gain [dB]",
+                  ["antenna_pattern_gain_dB"],
+                  500) 
 
 
 if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_901_UMa_C2_uniform' and\
@@ -139,7 +157,11 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_array_steering_vector_gains.npz'))
     
     to_plot = [a_load["array_steering_vector_gain_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "Antenna array gain [dB]", ["antenna_array_gain_dB"], 500)    
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "Antenna array gain [dB]",
+                      ["antenna_array_gain_dB"],
+                      500)    
     
     
     #################################################
@@ -149,7 +171,10 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_LoS.npz'))
     
     to_plot = [a_load["LoS_b_to_a"]]
-    plotting.plot_PMF(project_name, to_plot, "LoS",["LoS", "NLoS"]) 
+    plotting.plot_PMF(project_name,
+                      to_plot, 
+                      "LoS",
+                      ["LoS", "NLoS"]) 
     
     
     #################################################
@@ -159,7 +184,11 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_K_factor.npz'))
     
     to_plot = [a_load["K_factor_b_to_a_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "K factor [dB] (outdoor UE only)", ["K_factor_dB"], 500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "K factor [dB] (outdoor UE only)",
+                      ["K_factor_dB"],
+                      500)
     
     
     #################################################
@@ -169,17 +198,25 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_path_loss.npz'))
     
     to_plot = [a_load["path_loss_b_to_a_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "path loss [dB]", ["path_loss_dB"], 500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "path loss [dB]",
+                      ["path_loss_dB"],
+                      500)
     
     
     #################################################
-    # Plot Outdoor to Indoor penetration loss
+    # Plot O ti I penetration loss
     #################################################
     
     a_load = np.load(results_file(project_name, 'to_plot_o2i_penetration_loss.npz'))
     
     to_plot = [a_load["o2i_penetration_losses_b_to_a_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "O2I penetration loss [dB] (indoor UEs only)", ["o2i_penetration_loss_dB"], 500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "O2I penetration loss [dB] (indoor UEs only)",
+                      ["o2i_penetration_loss_dB"],
+                      500)
     
     
     #################################################
@@ -189,7 +226,11 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_shadowing_gain.npz'))
     
     to_plot = [a_load["shadowing_gain_b_to_a_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "Shadowing gain [dB]", ["shadowing_gain_dB"],500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "Shadowing gain [dB]",
+                      ["shadowing_gain_dB"],
+                      500)
     
     
     #################################################
@@ -199,7 +240,11 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_slow_channel_gain.npz'))
     
     to_plot = [a_load["slow_channel_gain_b_to_a_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "Slow channel gain [dB]", ["slow_channel_gain_dB"], 500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "Slow channel gain [dB]",
+                      ["slow_channel_gain_dB"],
+                      500)
     
     
     #################################################
@@ -209,4 +254,87 @@ if project_name != '3GPPTR38_901_UMa_C1_uniform' and project_name != '3GPPTR38_9
     a_load = np.load(results_file(project_name, 'to_plot_fast_fading_gain.npz'))
     
     to_plot = [a_load["fast_fading_gain_bAnt_to_aAnt_dB"]]
-    plotting.plot_CDF(project_name, to_plot, "Fast fading gain [dB]", ["fast_fading_gain_dB"], 500)
+    plotting.plot_CDF(project_name,
+                      to_plot, 
+                      "Fast fading gain [dB]",
+                      ["fast_fading_gain_dB"],
+                      500)
+
+
+#     #################################################
+#     # Plot SSB precoded channel gain
+#     #################################################
+    
+#     beam_type = "SSB"
+    
+#     a_load = np.load(results_file(project_name, "to_plot_" + beam_type + "_precoded_channel_gain_LoS_channel.npz"))
+    
+#     to_plot = [a_load["precoded_channel_gain_b_to_a_dB"]]
+#     plotting.plot_CDF(project_name,
+#                       to_plot, 
+#                       "Precoded LoS channel gain [dB] (based on " + beam_type + ")",
+#                       ["precoded_LoS_channel_gain_dB"],
+#                       500)
+    
+#     a_load = np.load(results_file(project_name, "to_plot_" + beam_type + "_precoded_channel_gain_complete_channel.npz"))
+
+#     to_plot = [a_load["precoded_channel_gain_b_to_a_dB"]]
+#     plotting.plot_CDF(project_name,
+#                       to_plot, 
+#                       "Precoded channel gain [dB] (based on " + beam_type + ")",
+#                       ["precoded_channel_gain_dB"],
+#                       500)    
+
+
+# #################################################
+# # Plot CSI-RS precoded channel gain
+# #################################################
+
+# # beam_type = "CSI_RS"
+
+# # a_load = np.load(os.path.join(os.getcwd(), folder_name, "to_plot_" + beam_type + "_precoded_channel_gain_LoS_channel.npz")
+
+# # to_plot = [a_load["precoded_channel_gain_b_to_a_dB"]]
+# # plotting.plot_CDF(project_name, 
+# #                   to_plot, 
+# #                   "Precoded LoS channel gain [dB] (based on " + beam_type + ")",
+# #                   ["precoded_LoS_channel_gain_dB"],
+# #                   500)
+
+# a_load = np.load(results_file(project_name, "to_plot_" + beam_type + "_precoded_channel_gain_complete_channel.npz"))
+
+# to_plot = [a_load["precoded_channel_gain_b_to_a_dB"]]
+# plotting.plot_CDF(project_name,
+#                   to_plot, 
+#                   "Precoded channel gain [dB] (based on " + beam_type + ")",
+#                   ["precoded_channel_gain_dB"],
+#                   500)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

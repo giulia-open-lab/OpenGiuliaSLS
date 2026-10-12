@@ -12,33 +12,40 @@ matteo.bernabe@iteam.upv.es
 """
 
 import importlib
+import importlib.util
 import time
 
-import numpy as np
 import torch
 
 from giulia.antenna import antenna_pattern_gains, antenna_arrays, array_steering_vectors
 from giulia.assertions.aux_files import validate_shadowing_files
-from giulia.bs import bs_deployments, base_stations, bs_tx_powers
+
+from giulia.config import sim_config
+from giulia.playground import distances_angles, sites, hotspots
+from giulia.bs import bs_deployments, base_stations
+from giulia.ue import ue_deployments
+from giulia.mobility import mobilities
+from giulia.rrc import time_frequency_resources, mcs_resources, beam_configs, cell_selections, cell_re_selections, cell_pairing
+from giulia.mac import calculate_best_serving_beam
+from giulia.phy import lut_bler_vs_sinrs, mutual_informations
+from giulia.antenna import antenna_pattern_gains, antenna_arrays, array_steering_vectors
 from giulia.channel import channels, los_probabilities, path_losses, shadowing_gains, shadowing_maps
 from giulia.channel import o2i_penetration_losses, fast_fading_gains, precoded_channel_gains, slow_channels, k_factor
 from giulia.config import sim_config
 from giulia.event_driven import eventDriven
 from giulia.event_driven.snapshot_control import Snapshot_control
-from giulia.kpis import calculate_noise, calculate_rss, calculate_rsrp, calculate_sinr, calculate_rate, \
-    power_consumptions
-from giulia.logger import debug
 from giulia.mac import calculate_best_serving_beam
+from giulia.kpis import calculate_noise, calculate_rss, calculate_rsrp, calculate_sinr, calculate_rate, power_consumptions
 from giulia.mobility import mobilities
 from giulia.outputs import save_performance
 from giulia.phy import lut_bler_vs_sinrs, mutual_informations
 from giulia.playground import distances_angles, sites, hotspots
 from giulia.rrc import time_frequency_resources, mcs_resources, beam_configs, cell_selections, cell_re_selections
-from giulia.tools.tools import log_calculations_time, log_elapsed_time
+from giulia.tools.tools import log_calculations_time, log_elapsed_time, free_memory
 from giulia.ue import ue_deployments
 from giulia.outputs.saveable import Saveable
 
-from giulia.logger import warning
+from giulia.logger import debug 
 
 
 class Giulia:
@@ -89,15 +96,13 @@ class Giulia:
                  number_of_episods = 0,
                  regression=0, 
                  enable_GPU=True,
-                 project_name = None,
-                 additional_input={}, 
-                 enable_saveable=True):
+                 project_name = None, 
+                 enable_saveable=True, 
+                 **kwargs):
         
         # Enable / Disable Saveable Features
-        if enable_saveable: 
-            Saveable.enable()
-        else: 
-            Saveable.disable()
+        if enable_saveable: Saveable.enable()
+        else: Saveable.disable()
 
         # Validate that the shadowing files exist
         validate_shadowing_files()
@@ -105,6 +110,7 @@ class Giulia:
         #### CUDA DEVICE ####
         #####################
         # Select device cuda if available
+        self.enable_GPU = enable_GPU
         self.device = torch.device("cuda" if torch.cuda.is_available() and enable_GPU else "cpu")
         debug(f"Giulia running device: {self.device}")
 
@@ -116,7 +122,7 @@ class Giulia:
         if ue_playground_model is None:
             ue_playground_model = scenario_playground_model
 
-        # Managing Sionna
+            # Managing Sionna
         spam_loader = importlib.util.find_spec('sionna')
         sn_indicator = spam_loader is not None
 
@@ -126,14 +132,12 @@ class Giulia:
         else :
             uav_height_m = None
 
-        # Store Dictionary for passing additional information, if needed
-        self.additional_input = additional_input
 
         #### SHOW CONFIGURATION ####
         ############################
         debug(
             "#" * 81 + f"\nSimulation: Scenario_model = {scenario_playground_model}" + \
-            f", UE_distribution = {ue_distribution}\n" + "#" * 81
+            f", UE_distribution = {ue_distribution}\nPresents:   {preset}\n" + "#" * 81
         )
         
         
@@ -146,6 +150,7 @@ class Giulia:
         self.ue_playground_deployment_obj = []
         self.ue_hotspot_deployment_obj = []
         self.network_deployment_obj = []
+        self.pairing_cell_obj = []
         self.cell_antenna_array_structure_obj = []
         self.cell_SSB_conf_obj = []
         self.cell_CSI_RS_conf_obj = []
@@ -164,6 +169,7 @@ class Giulia:
         self.slow_channel_gain_ue_to_cell_obj = []
         self.dl_fast_fading_gain_ueAnt_to_cellAnt_obj = []
         self.best_serving_CSI_RS_per_ue_obj = []
+        self.base_stations_obj = []
         self.eventDriven_obj = []        
 
 
@@ -186,8 +192,10 @@ class Giulia:
                 regression,
                 sn_indicator,
                 uav_height_m,
+                enable_GPU,
                 project_name,
-                additional_input)
+                enable_saveable,
+                **kwargs)
 
 
         #### PLAYGROUND ####
@@ -203,10 +211,12 @@ class Giulia:
         # Creates the reference playground for UE distribution
         self.ue_playground_deployment_obj = \
             sites.Site_uePlaygroundDeployment(
+                self.simulation_config_obj,
                 self.simulation_config_obj.wraparound,
                 self.simulation_config_obj.ue_playground_model,
                 self.simulation_config_obj.ue_distribution)
-        self.ue_playground_deployment_obj.process()
+        self.ue_playground_deployment_obj.process()        
+     
 
         # Creates the reference hotspot for UE distribution
         self.ue_hotspot_deployment_obj = \
@@ -226,6 +236,13 @@ class Giulia:
                 self.site_deployment_obj,
                 self.ue_hotspot_deployment_obj)
         self.network_deployment_obj.process()
+        
+        # Pairing cell process
+        self.pairing_cell_obj = cell_pairing.PairingCell(self.simulation_config_obj, 
+                                                         self.site_deployment_obj, self.ue_playground_deployment_obj,
+                                                         self.ue_hotspot_deployment_obj, self.network_deployment_obj,
+                                                         pairing_model_type = "adjacency_neighbouring_matrix_cellLevel_FallBack_PerLayer")
+        self.pairing_cell_obj.process()
 
         self.simulation_config_obj.set_sn_indicator(
             self.network_deployment_obj)
@@ -329,7 +346,7 @@ class Giulia:
 
         # Configures mutual information tables
         if self.simulation_config_obj.sinr_mapping == "MIESM" :
-            self.mi_obj = mutual_informations.Mutual_Information(self.simulation_config_obj,)
+            self.mi_obj = mutual_informations.Mutual_Information(self.simulation_config_obj)
             self.mi_obj.process()
 
 
@@ -345,36 +362,71 @@ class Giulia:
         self.shadowing_map_cell_obj.process()
 
 
-    def configure(self, snapshot_index, max_time_ms):
+        #### LOAD TRAFFIC INFO ####
+        ###################
+
+        # self.traffic_stats_cell_obj =\
+        #     traffic_stats.Traffic_Stats(
+        #         0,
+        #         self.simulation_config_obj,
+        #         self.network_deployment_obj)
+        # self.traffic_stats_cell_obj.process()
         
-        # rescheduling_us = 1e6
+
+
+    def configure(self, snapshot_index, max_time_us):
+        self.snapshot_index: int = snapshot_index
+
+        # Basic type checks
+        if not isinstance(self.simulation_config_obj, sim_config.Simulation_Config):
+            raise TypeError(f"in {self.__class__.__name__}.configure simulation_config_obj must be an instance of Simulation_Config")
+
+        if not isinstance(self.network_deployment_obj, bs_deployments.Network):
+            raise TypeError(f"in {self.__class__.__name__}.configure network_deployment_obj must be an instance of Network")
+        
+        if not isinstance(self.ue_playground_deployment_obj, sites.Site):
+            raise TypeError(f"in {self.__class__.__name__}.configure ue_playground_deployment_obj must be an instance of Site")
+        
+        if not isinstance(self.ue_hotspot_deployment_obj, hotspots.Hotspot):
+            raise TypeError(f"in {self.__class__.__name__}.configure ue_hotspot_deployment_obj must be an instance of Hotspot")
+
 
         ### Rescheduling information  ###
         ###############################
-        scheduling_info = self.simulation_config_obj.event_event_scheduling_info
+        scheduling_info:dict = self.simulation_config_obj.event_scheduling_info
 
 
         ### Start time count  ###
         ###############################
+
         t_start = time.perf_counter()
 
 
         ### UPDATE SNAPSHOT CONTROL ###
         ###############################
+
         snapshot_control = Snapshot_control.get_instance()
         snapshot_control.num_snapshots = snapshot_index
 
 
         #### SET RANDOM SEED ####
         ####################
+
         # IMPORTANT: The random seed is increased by one unit per snapshot. This is done at the end of the foor loop
-        self.simulation_config_obj.set_random_seed(snapshot_control.num_snapshots)
+        self.simulation_config_obj.set_random_seed(
+            snapshot_control.num_snapshots)
+
+        # The shadowing maps are built once, at init, but re-assigned to sites at every interval: re-seed them, or the episode depends on the intervals run before it
+        self.shadowing_map_cell_obj.reseed(self.simulation_config_obj.random_seed)
 
 
         #### EVENT-DRIVEN ####
         ####################
 
-        self.eventDriven_obj = eventDriven.EventDrivenSimulation(1, max_time_ms)
+        self.eventDriven_obj = \
+            eventDriven.EventDrivenSimulation(
+                1,
+                max_time_us)
             
             
         #### UEs ####
@@ -385,10 +437,10 @@ class Giulia:
             ue_deployments.UE_Deployment(
                 self.simulation_config_obj,
                 self.network_deployment_obj,
-                None,
                 self.ue_playground_deployment_obj,
                 self.ue_hotspot_deployment_obj)
         self.ue_deployment_obj.process()
+        
 
 
         #### UE ANTENNA ARRAYS ####
@@ -434,25 +486,20 @@ class Giulia:
             self.eventDriven_obj.add_event(0, self.channel_sn_obj, 'process', scheduling_info["channel_sn_obj"])
 
         else:
-            self.channel_sn_obj = []
+            self.channel_sn_obj = None
             
-            
-        #### BS TX Power ####
-        #####################
-            
-        self.bs_tx_power_obj = bs_tx_powers.BS_TX_Power(self.network_deployment_obj)     
-        self.eventDriven_obj.add_event(0, self.bs_tx_power_obj, 'process', scheduling_info["bs_tx_power_obj"])            
-
 
         #### DISTANCES ####
         ###################
 
         # Calculates distances UE to Cell
-        self.distance_angles_ue_to_cell_obj = distances_angles.Distance_Angles_ue_to_cell(self.simulation_config_obj,
+        self.distance_angles_ue_to_cell_obj = \
+            distances_angles.Distance_Angles_ue_to_cell(self.simulation_config_obj,
                                                         self.site_deployment_obj,
                                                         self.network_deployment_obj,
                                                         self.ue_deployment_obj)
         self.eventDriven_obj.add_event(0, self.distance_angles_ue_to_cell_obj, 'process', scheduling_info["distance_angles_ue_to_cell_obj"])
+
 
         # Calculates distance UE antennas to cell antennas
         self.distance_angles_ueAnt_to_cellAnt_obj = \
@@ -518,7 +565,7 @@ class Giulia:
                              self.LOS_probability_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.K_factor_ue_to_cell_obj, 'process', scheduling_info["K_factor_ue_to_cell_obj"])
 
-
+        
         #### PATH LOSS ####
         ###################
 
@@ -531,7 +578,7 @@ class Giulia:
                                   self.LOS_probability_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.path_loss_ue_to_cell_obj, 'process', scheduling_info["path_loss_ue_to_cell_obj"])
 
-
+        
         #### O2I PENETRATION LOSS ####
         ##############################
 
@@ -644,11 +691,12 @@ class Giulia:
                 self.cell_antenna_array_structure_obj,
                 self.cell_SSB_conf_obj,
                 self.ue_deployment_obj,
+                self.time_frequency_resource_obj,
                 self.los_channel_gain_ue_to_cell_obj,
                 self.array_steering_vector_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.SSB_precoded_channel_gain_no_fast_fading_ue_to_cell_obj, 'process', scheduling_info["SSB_precoded_channel_gain_no_fast_fading_ue_to_cell_obj"])
 
-
+        
         ##### SBB ####
         # Calculates SSB precoded channel with fast fading coefficients/channel
         # In this case, there is a dependency on the PRB
@@ -660,9 +708,26 @@ class Giulia:
                 self.cell_antenna_array_structure_obj,
                 self.cell_SSB_conf_obj,
                 self.ue_deployment_obj,
+                self.time_frequency_resource_obj,
                 self.channel_gain_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.SSB_precoded_channel_gain_ue_to_cell_obj, 'process', scheduling_info["SSB_precoded_channel_gain_ue_to_cell_obj"])
 
+        
+        ##### CSI_RS ####
+        # Calculates long-term CSI-RS precoded channel with LoS coefficients/channel
+        # self.CSI_RS_precoded_channel_gain_no_fast_fading_ue_to_cell_obj =\
+        #     precoded_channel_gains.Precoded_Channel_Gain_CSI_RS_no_fast_fading_ue_to_cell(
+        #         'LoS_channel',
+        #         self.simulation_config_obj,
+        #         self.network_deployment_obj,
+        #         self.cell_antenna_array_structure_obj,
+        #         self.cell_CSI_RS_conf_obj,
+        #         self.ue_deployment_obj,
+        #         self.channel_gain_ue_to_cell_obj,
+        #         self.array_steering_vector_ue_to_cell_obj)
+        # self.eventDriven_obj.add_event(0, self.CSI_RS_precoded_channel_gain_no_fast_fading_ue_to_cell_obj, 'process', rescheduling_us)
+
+        #TO DO for cell to cell and ue to ue
 
         ##### CSI_RS ####
         # Calculates CSI-RS precoded channel with fast fading coefficients/channel
@@ -671,12 +736,15 @@ class Giulia:
             precoded_channel_gains.Precoded_Channel_Gain_CSI_RS_ue_to_cell(
                 'complete_channel',
                 self.simulation_config_obj,
-                  self.network_deployment_obj,
+                self.network_deployment_obj,
                 self.cell_antenna_array_structure_obj,
                 self.cell_CSI_RS_conf_obj,
                 self.ue_deployment_obj,
+                self.time_frequency_resource_obj,
                 self.channel_gain_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.CSI_RS_precoded_channel_gain_ue_to_cell_obj, 'process', scheduling_info["CSI_RS_precoded_channel_gain_ue_to_cell_obj"])
+
+        #TO DO for cell to cell and ue to ue
 
 
         #### NOISE POWER ####
@@ -701,6 +769,7 @@ class Giulia:
                 'beam_RSS_per_PRB',
                 self.network_deployment_obj,
                 self.cell_SSB_conf_obj,
+                self.time_frequency_resource_obj,
                 self.SSB_precoded_channel_gain_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.SSB_RSS_per_PRB_ue_to_cell_obj, 'process', scheduling_info["SSB_RSS_per_PRB_ue_to_cell_obj"])
 
@@ -712,6 +781,7 @@ class Giulia:
                 'beam_RSS_per_PRB',
                 self.network_deployment_obj,
                 self.cell_CSI_RS_conf_obj,
+                self.time_frequency_resource_obj,
                 self.CSI_RS_precoded_channel_gain_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.CSI_RS_RSS_per_PRB_ue_to_cell_obj, 'process', scheduling_info["CSI_RS_RSS_per_PRB_ue_to_cell_obj"])
 
@@ -725,6 +795,7 @@ class Giulia:
         self.CRS_RSRP_no_fast_fading_ue_to_cell_obj = \
             calculate_rsrp.RSRP_CRS_no_fast_fading(
                 'CRS_RSRP_no_fast_fading',
+                self.simulation_config_obj,
                 self.network_deployment_obj,
                 None,
                 self.slow_channel_gain_ue_to_cell_obj)
@@ -737,6 +808,7 @@ class Giulia:
         self.SSB_RSRP_no_fast_fading_ue_to_cell_obj = \
             calculate_rsrp.RSRP_SSB_no_fast_fading(
                 'beam_RSRP_no_fast_fading',
+                self.simulation_config_obj,
                 self.network_deployment_obj,
                 self.cell_SSB_conf_obj,
                 self.SSB_precoded_channel_gain_no_fast_fading_ue_to_cell_obj)
@@ -749,6 +821,7 @@ class Giulia:
         self.SSB_RSRP_ue_to_cell_obj = \
             calculate_rsrp.RSRP_SSB(
                 'beam_RSRP_based_on_RSS',
+                self.simulation_config_obj,
                 self.network_deployment_obj,
                 self.cell_SSB_conf_obj,
                 self.SSB_RSS_per_PRB_ue_to_cell_obj)
@@ -756,11 +829,24 @@ class Giulia:
 
 
         ##### CSI_RS ####
+        # Calculates long-term CSI-RS RSRP - This includes CSI-RS precoded channel with long-term LoS coefficients/channel
+        # This is handy for beam CSI-RS selection
+        # self.CSI_RS_RSRP_no_fast_fading_ue_to_cell_obj =\
+        #     calculate_rsrp.RSRP_CSI_RS_no_fast_fading(
+        #         'beam_RSRP_no_fast_fading',
+        #         self.simulation_config_obj, 
+        #         self.network_deployment_obj,
+        #         self.cell_CSI_RS_conf_obj,
+        #         self.CSI_RS_precoded_channel_gain_no_fast_fading_ue_to_cell_obj)
+        # self.eventDriven_obj.add_event(0, self.CSI_RS_RSRP_no_fast_fading_ue_to_cell_obj, 'process', rescheduling_us)
+
+        ##### CSI_RS ####
         # Calculates instantaneous CSI_RS RSRP - This includes CSI_RS precoded channel with fast fading coefficients/channel
         # In this case, the RSS is averaged across the PRBs
         self.CSI_RS_RSRP_ue_to_cell_obj = \
             calculate_rsrp.RSRP_CSI_RS(
                 'beam_RSRP_based_on_RSS',
+                self.simulation_config_obj,
                 self.network_deployment_obj,
                 self.cell_CSI_RS_conf_obj,
                 self.CSI_RS_RSS_per_PRB_ue_to_cell_obj)
@@ -770,7 +856,7 @@ class Giulia:
         if self.simulation_config_obj.instantaneous_RSRP == True:
             self.eventDriven_obj.add_event(0, self.SSB_RSRP_no_fast_fading_ue_to_cell_obj, 'set_RSRP_ue_to_cell_dBm',
                                            self.SSB_RSRP_ue_to_cell_obj, scheduling_info["SSB_RSRP_no_fast_fading_ue_to_cell_obj"]["set_RSRP_ue_to_cell_dBm"])
-
+            
 
         #### CELL SELECTION ####
         ########################
@@ -862,6 +948,7 @@ class Giulia:
                 self.ue_playground_deployment_obj,
                 self.ue_deployment_obj,
                 self.cell_CSI_RS_conf_obj,
+                self.time_frequency_resource_obj,
                 self.CSI_RS_RSRP_ue_to_cell_obj, #CSI_RS_RSRP_no_fast_fading_ue_to_cell_obj,
                 self.best_serving_cell_ID_per_ue_based_on_SSB_obj)
         self.eventDriven_obj.add_event(0, self.best_serving_CSI_RS_per_ue_obj, 'process', scheduling_info["best_serving_CSI_RS_per_ue_obj"])
@@ -911,20 +998,52 @@ class Giulia:
         #### INITIALIZE BS PROTOCOL STACK ####
         ######################################
         self.base_stations_obj = \
-            base_stations.BaseStations(                
+            base_stations.BaseStations(
+                self.eventDriven_obj,
                 self.simulation_config_obj,
                 self.network_deployment_obj,
                 self.ue_deployment_obj,
                 self.cell_CSI_RS_conf_obj,
+                self.time_frequency_resource_obj,
+                self.SSB_RSRP_ue_to_cell_obj, 
                 self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
                 self.best_serving_CSI_RS_per_ue_obj,
                 self.dl_fast_fading_gain_ueAnt_to_cellAnt_obj, 
-                self.SSB_sinr_ue_to_cell_obj)
-        self.eventDriven_obj.add_event(0, self.base_stations_obj, 'process', scheduling_info["base_stations_obj"])        
+                self.SSB_sinr_ue_to_cell_obj, 
+                self.power_consumption_obj)
+        self.eventDriven_obj.add_event(0, self.base_stations_obj, 'process', scheduling_info["base_stations_obj"]['process'])        
+        
+        # Initialize BaseStation Mac Layer Events
+        self.base_stations_obj.initialize_eventDriven_layers_MAC_layers(self.eventDriven_obj, 
+                                                                        timing_from_now_us=0)
 
+        # Initialize BaseStation Power Consumption Event
+        self.base_stations_obj.initialize_eventDriven_PowerConsumption(self.eventDriven_obj, 
+                                                                       timing_from_now_us=0)
+
+        
 
         #### DATA CHANNEL SINR  ####
         ############################
+
+        ##### CSI_RS ####
+        # Calculate long-term SINR based on CSI-RS beams RSRPs - This uses CSI-RS precoded channel with long-term LoS coefficients/channel
+        # The PRB domain is not a dimension of the output here
+        # self.CSI_RS_sinr_ue_to_cell_obj =\
+        #     calculate_sinr.SINR(
+        #         'sinr_based_on_beam_rsrp',
+        #         "CSI_RS",
+        #         self.simulation_config_obj,
+        #         self.site_deployment_obj,
+        #         self.ue_playground_deployment_obj,
+        #         self.ue_deployment_obj,
+        #         self.time_frequency_resource_obj,
+        #         None,
+        #         self.CSI_RS_RSRP_no_fast_fading_ue_to_cell_obj,
+        #         self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
+        #         self.best_serving_CSI_RS_per_ue_obj)
+        # self.eventDriven_obj.add_event(0, self.CSI_RS_sinr_ue_to_cell_obj, 'process', rescheduling_us)
+
 
         ##### CSI_RS ####
         # Calculate SINR per PRB based on CSI-RS beams RSSs per PRB. This uses CSI-RS precoded channel with fast fading coefficients/channel per PRB
@@ -952,6 +1071,23 @@ class Giulia:
         #############################
 
         ##### CSI_RS ####
+        # Calcualte long-term UE rates based on their long term SINRs and using round robin principles
+        # self.ue_throughput_based_on_avg_CSI_RS_SINR_obj =\
+        #     calculate_rate.Rate_based_on_avg_CSI_RS_SINR(
+        #         'theoretical_long_term_equal_resource_share_UE_throughput_based_on_avgSINR',
+        #         self.simulation_config_obj,
+        #         self.network_deployment_obj,
+        #         self.ue_deployment_obj,
+        #         self.cell_CSI_RS_conf_obj,
+        #         self.time_frequency_resource_obj,
+        #         self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
+        #         self.best_serving_CSI_RS_per_ue_obj,
+        #         None,
+        #         self.CSI_RS_sinr_ue_to_cell_obj, 
+        #         self.ue_deployment_obj)
+        # self.eventDriven_obj.add_event(0, self.ue_throughput_based_on_avg_CSI_RS_SINR_obj, 'process', rescheduling_us)
+
+        ##### CSI_RS ####
         # Calculate UE rate using UE SINR per PRB
         self.ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_obj = \
             calculate_rate.Rate_based_on_ins_CSI_RS_SINR(
@@ -962,6 +1098,7 @@ class Giulia:
                 self.cell_CSI_RS_conf_obj,
                 self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
                 self.best_serving_CSI_RS_per_ue_obj,
+                self.time_frequency_resource_obj,
                 None,
                 self.CSI_RS_sinr_per_PRB_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_obj, 'process', scheduling_info["ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_obj"])
@@ -977,42 +1114,15 @@ class Giulia:
                 self.cell_CSI_RS_conf_obj,
                 self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
                 self.best_serving_CSI_RS_per_ue_obj,
+                self.time_frequency_resource_obj,
                 self.base_stations_obj,
                 self.CSI_RS_sinr_per_PRB_ue_to_cell_obj)
         self.eventDriven_obj.add_event(0, self.ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_obj, 'process', scheduling_info["ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_obj"])
 
 
-        #### NETWORK ENERGY CONSUMPTION  ####
-        #####################################
-
-        self.eventDriven_obj.add_event(
-            0,
-            self.power_consumption_obj,
-            'calculate_power_consumption',
-            self.network_deployment_obj,
-            scheduling_info["power_consumption_obj"],
-            np.full(len(self.network_deployment_obj.df_ep), 'active'), # cell_status =
-            self.base_stations_obj )# PRB_load
-
-
-        #### SAVE DATA PER SNAPSHOT  ####
-        #################################
-
-        self.performance_obj = \
-            save_performance.Performance(
-                self.simulation_config_obj,
-                self.best_serving_cell_ID_per_ue_based_on_CRS_obj,
-                self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
-                self.CRS_RSRP_no_fast_fading_ue_to_cell_obj,
-                self.SSB_RSRP_no_fast_fading_ue_to_cell_obj,
-                self.best_serving_CSI_RS_per_ue_obj,
-                self.CRS_sinr_ue_to_cell_obj,
-                self.SSB_sinr_ue_to_cell_obj,
-                self.CSI_RS_sinr_per_PRB_ue_to_cell_obj,
-                self.ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_obj,
-                self.ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_obj,
-                self.power_consumption_obj)
-        self.eventDriven_obj.add_event(0, self.performance_obj, 'process', scheduling_info["performance_obj"])
+        #### RRC LAYER ####
+        ######################################
+        self.base_stations_obj.initialize_eventDriven_RRC_layers(self.eventDriven_obj, 0)
 
 
         #### Mobility  ####
@@ -1034,23 +1144,149 @@ class Giulia:
                     self.simulation_config_obj,
                     self.site_deployment_obj,
                     self.network_deployment_obj)
+            self.eventDriven_obj.add_event(0, bs_mobility_obj, 'process', scheduling_info["bs_mobility_obj"])   
+
+
+
+        #########  DATA SAVER  ##########
+        #################################
+        # Init the object to be executed in run_simulation when the control is passed outside
+        # and terminate a single step.
+        self.performance_obj = \
+            save_performance.Performance(
+                self.simulation_config_obj,
+                self.best_serving_cell_ID_per_ue_based_on_CRS_obj,
+                self.best_serving_cell_ID_per_ue_based_on_SSB_obj,
+                self.CRS_RSRP_no_fast_fading_ue_to_cell_obj,
+                self.SSB_RSRP_no_fast_fading_ue_to_cell_obj,
+                #self.SSB_RSS_per_PRB_ue_to_cell_obj,
+                #self.CSI_RS_RSRP_no_fast_fading_ue_to_cell_obj,
+                #self.CSI_RS_RSS_per_PRB_ue_to_cell_obj,
+                self.best_serving_CSI_RS_per_ue_obj,
+                self.CRS_sinr_ue_to_cell_obj,
+                self.SSB_sinr_ue_to_cell_obj,
+                #self.CSI_RS_sinr_ue_to_cell_obj,
+                self.CSI_RS_sinr_per_PRB_ue_to_cell_obj,
+                #self.ue_throughput_based_on_avg_CSI_RS_SINR_obj,
+                self.ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_obj,
+                self.ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_obj,
+                self.power_consumption_obj, 
+                self.time_frequency_resource_obj,
+                self.base_stations_obj)
+
+
+        #### MOBILITY  ####
+        ###################
+
+        # Calculate UE position based on UE mobility model
+        if self.simulation_config_obj.ue_mobility != None:
+            ue_mobility_obj = \
+                mobilities.Mobility(
+                    self.simulation_config_obj,
+                    self.ue_playground_deployment_obj,
+                    self.ue_deployment_obj)
+            self.eventDriven_obj.add_event(0, ue_mobility_obj, 'process', scheduling_info["ue_mobility_obj"])
+            
+        # Calculate BS position based on BS mobility model
+        if self.simulation_config_obj.bs_mobility != None:
+            bs_mobility_obj = \
+                mobilities.Mobility(
+                    self.simulation_config_obj,
+                    self.site_deployment_obj,
+                    self.network_deployment_obj)
             self.eventDriven_obj.add_event(0, bs_mobility_obj, 'process', scheduling_info["bs_mobility_obj"])            
 
+
+
+        #### ADDITIONAL ATTRIBUTE SETTING ####
+        ######################################
+        
+        # These attributes cannot be set earlier because, at the time the
+        # base_stations_obj is created, some of the required attributes
+        # are not yet initialized or available.
+
+        # List of attribute names (as strings) representing the RSRP objects
+        rsrp_obj_names = [
+            "CSI_RS_RSRP_ue_to_cell_obj",
+            "SSB_RSRP_ue_to_cell_obj",
+            "SSB_RSRP_no_fast_fading_ue_to_cell_obj",
+            "CRS_RSRP_no_fast_fading_ue_to_cell_obj"
+        ]
+        
+        # Iterate through all the names in the list.
+        for name in rsrp_obj_names:
+            # Dynamically set the `base_stations_obj` attribute of this object
+            # to the common `base_stations_obj` value.
+            setattr(getattr(self, name),
+                    "base_stations_obj",
+                    self.base_stations_obj)
+            
+        # List of attribute names (as strings) representing the RSS objects
+        rss_obj_names = [
+            "SSB_RSS_per_PRB_ue_to_cell_obj",
+            "CSI_RS_RSS_per_PRB_ue_to_cell_obj",
+        ]
+        
+        # Iterate through all the names in the list.
+        for name in rss_obj_names:
+            # Dynamically set the `base_stations_obj` attribute of this object
+            # to the common `base_stations_obj` value.
+            setattr(getattr(self, name),
+                    "base_stations_obj",
+                    self.base_stations_obj)
+            
+
+        # List of attribute names (as strings) representing the SINR objects
+        sinr_obj_names = [
+            "CSI_RS_sinr_per_PRB_ue_to_cell_obj",
+        ]
+        # Iterate through all the names in the list.
+        for name in sinr_obj_names:
+            # Add in base_station_obj the 'name' object
+            setattr(self.base_stations_obj, 
+                    name, 
+                    getattr(self, name)
+            )
+            setattr(self.base_stations_obj.prb_requirement_generator_ue_obj, 
+                    name, 
+                    getattr(self, name)
+            )
+            
+
+        # Free CPU and GPU memory between episodes.
+        # Each episode can accumulate up to ~10GB of unreferenced data;
+        # cleaning here prevents OOM when the next episode reconfigures.
+        free_memory()
+            
         log_calculations_time('Giulia configuration', t_start)
+        
 
+    def run_simulation(self, step_index, decision_making_interval_us):
+        self.step_index: int = step_index
 
-    def run_simulation(self, step_index, decision_making_interval_ms):
+        # Basic check object
+        if not isinstance(self.eventDriven_obj, eventDriven.EventDrivenSimulation):
+            raise TypeError("eventDriven_obj must be an instance of EventDriven")
 
 
         ### Start time count  ###
         ###############################
+
         t_start = time.perf_counter()
 
 
         #### EVENT-DRIVEN ####
         ####################
-        self.eventDriven_obj.run(step_index, decision_making_interval_ms)
+        self.eventDriven_obj.run(step_index, decision_making_interval_us)
+
+        # Run the Saving Processing
+        self.performance_obj.process()
 
         log_elapsed_time('Giulia run', t_start, debug_prints=True)
 
         return self.performance_obj.r_e_ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_Mbps
+    
+    
+    def reset(self, snapshot_index, max_time_us):
+        return self.configure(snapshot_index, max_time_us)
+    

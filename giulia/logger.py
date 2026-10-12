@@ -134,7 +134,7 @@ def __print(level: LogLevel, prefix_fore: int, prefix_back: int, fore: int, pref
     lines = lines.replace('\n', '\n' + ' ' * (len(prefix) + 3))
     print(str(prefix_fore) + str(prefix_back) + f' {prefix} ' + str(Style.RESET_ALL) + str(fore) + ' ' + lines + str(Style.RESET_ALL))
 
-def parse_log_level(level: str) -> Optional[LogLevel]:
+def parse_log_level(level: str|int) -> Optional[LogLevel]:
     if level == 'VERBOSE' or level == 0:
         return LogLevel.VERBOSE
     elif level == 'DEBUG' or level == 1:
@@ -212,4 +212,4 @@ def error(*values, exclusive: bool = False):
     :param exclusive: if ``True``, the text will only be printed if the debug level is exactly ``ERROR``, and not on
     lower levels.
     """
-    __print(LogLevel.ERROR, Fore.WHITE, Back.RED, Fore.GREEN, 'ERRO', *values, exclusive=exclusive)
+    __print(LogLevel.ERROR, Fore.WHITE, Back.RED, Fore.RED, 'ERRO', *values, exclusive=exclusive)

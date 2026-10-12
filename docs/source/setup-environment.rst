@@ -33,7 +33,9 @@ To create a new environment, run the following command:
 
 .. important::
 
-    You can use whatever version **between 3.10 and 3.11** you want. However, we recommend using the latest version.
+    Python **3.11 or newer** is required: ``pyproject.toml`` sets
+    ``requires-python = ">=3.11"``, and Sionna 2 needs it too. The validated reference
+    environment is Python 3.11.
 
 2a.2. Activate the environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -58,19 +60,16 @@ To activate the environment, run the following command:
 2a.3. Install dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To install the dependencies, run the following command:
+The dependency list is kept in the installer script, not in a ``requirements.txt``. With the
+environment activated, run:
 
 .. code-block:: shell
 
-    pip install -r requirements.txt
+    bash scripts/installer_dependencies.sh
 
-.. note::
-
-    Depending on what you are trying to achieve, there are multiple requirements files. Those are:
-
-    1. ``requirements.txt``: Required dependencies for running the project.
-    2. ``requirements-dev.txt``: Required dependencies for development (``requirements.txt`` must also be installed).
-    3. ``requirements-doc.txt``: Required dependencies for generating the documentation.
+This installs the same pinned scientific stack that ``scripts/installer.sh`` would, into the
+environment that is currently active. See :doc:`environment-setup` for the full list of what gets
+installed and for the flags ``scripts/installer.sh`` accepts.
 
 .. hint::
 
@@ -78,22 +77,15 @@ To install the dependencies, run the following command:
 
 .. note::
 
-    Even though we are running ``pip`` this will only install the dependencies in the current environment.
-
-There are also some non-Python required dependencies. To install them:
-
-.. code-block:: shell
-
-    conda install -c conda-forge cudatoolkit
-
-.. tip::
-
-    Press ``y`` (or simply [enter]) when asked if you want to proceed.
+    Even though we are running ``pip``, this only installs into the currently active Conda
+    environment.
 
 .. important::
 
-    By downloading and using the CUDA Toolkit conda packages, you accept the terms and conditions of the CUDA End User
-    License Agreement (EULA): https://docs.nvidia.com/cuda/eula/index.html
+    Do **not** install PyTorch yourself, and do not install a CUDA toolkit through Conda.
+    Sionna 2 is PyTorch-based and pulls in both PyTorch and its bundled CUDA runtime
+    automatically; installing them separately overwrites the build Sionna resolved and breaks
+    the environment.
 
 2a.4. Export the environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,15 +94,22 @@ If you want to export the environment to use it in another machine, you can run 
 
 .. code-block:: shell
 
-    conda env export --name giulia > env/environment.yml
+    conda env export --name giulia > environment.yml
+
+.. note::
+
+    ``environment.yml`` lives at the **repository root** and is the full bit-for-bit snapshot of
+    the validated runtime environment. The ``env/`` folder holds only the auxiliary environments,
+    currently ``env/environment-docs.yml`` for building the documentation.
 
 2b. Importing a Conda environment
 ----------------------------------
 
-2a.2. Import the environment
+2b.1. Import the environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you want to import a Conda environment, you can run the following command:
+Instead of creating an environment and installing into it, you can recreate the validated one
+directly from the snapshot committed in the repository:
 
 .. tabs::
 
@@ -118,30 +117,33 @@ If you want to import a Conda environment, you can run the following command:
 
         .. code-block:: shell
 
-            conda env create -n giulia --file env/environment.yml
+            conda env create -n giulia --file environment.yml
 
    .. tab:: Remotely (from a URL)
 
         .. code-block:: shell
 
-            conda env create -n giulia --file https://raw.githubusercontent.com/david-lopez-perez/Giulia/refs/heads/main/env/environment.yml
+            conda env create -n giulia --file https://raw.githubusercontent.com/david-lopez-perez/Giulia/refs/heads/main/environment.yml
 
 .. note::
 
-    We provide multiple environments depending on what you are trying to achieve. Those are:
+    Two environment files are provided:
 
-    1. ``environment.yml``: Required dependencies for running the project.
-    2. ``environment-dev.yml``: Required dependencies for development.
-    3. ``environment-docs.yml``: Required dependencies for generating the documentation.
-
-    Replace ``env/environment.yml`` with the environment you want to import (keep the ``env/`` prefix).
+    1. ``environment.yml`` (repository **root**): the full runtime environment, pinned bit-for-bit,
+       including the exact PyTorch build resolved by Sionna 2.
+    2. ``env/environment-docs.yml``: the dependencies needed to build this documentation. It does
+       **not** include the simulator's GPU stack.
 
 .. tip::
 
-    If you want to have multiple environments on your machine, suffix them with the type of environment you are creating.
-    For example, ``giulia-docs`` for the documentation environment.
+    If you want to have multiple environments on your machine, suffix them with the type of
+    environment you are creating. For example, ``giulia-docs`` for the documentation environment:
 
-2a.2. Activate the environment
+    .. code-block:: shell
+
+        conda env create -n giulia-docs --file env/environment-docs.yml
+
+2b.2. Activate the environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To activate the environment, run the following command:

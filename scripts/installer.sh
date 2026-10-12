@@ -8,7 +8,17 @@ current_env=false
 no_shadowing_download=false
 env_name=""
 
-DEV_REQUIREMENTS="pylint pyproj==3.7.0"
+# Pinned to the validated reference environment ("giulia-no-tf", Python 3.11).
+# Keep these pins in sync with scripts/installer_dependencies.sh and environment.yml.
+# Notes:
+#   - torch is NOT listed here: it is installed automatically as a dependency of
+#     Sionna 2, together with its bundled CUDA runtime. Do not install it
+#     separately, to avoid overwriting the build Sionna resolves.
+#   - pyproj is a runtime dependency (used by giulia/tools/tools.py), so it is
+#     part of REQ. requests and tomlkit are only needed by
+#     scripts/download_shadowing_files.py and examples/giulia_EVpy.
+REQ="sionna==2.0.1 numpy==2.4.6 scipy==1.17.1 pandas==3.0.3 scikit-learn==1.9.0 matplotlib==3.11.0 seaborn==0.13.2 shapely==2.1.2 geopandas==1.1.4 pyproj==3.7.2 trimesh[easy]==4.12.2 mitsuba==3.8.0 astropy==8.0.1 itur==0.4.0 pyarrow==25.0.0 PyYAML==6.0.3 psutil==7.2.2 nvidia-ml-py==13.610.43 tqdm==4.68.4 requests tomlkit rich"
+DEV_REQUIREMENTS="pylint"
 
 # Function to print usage
 print_usage() {
@@ -131,7 +141,7 @@ if [ "$ENV_CHOICE" == "new" ]; then
     fi
 
     # Create the environment with Python 3.11
-    conda create -n "$ENV_NAME" python=3.11 -c conda-forge -y
+    conda create -n "$ENV_NAME" python=3.11 #-c conda-forge -y
 
     # Activate the environment using the bash-compatible command
     source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -147,41 +157,17 @@ else
     exit 1
 fi
 
-# See DEPENDENCIES.md for more information about the specifics of the following installations.
-# TLDR; Torch 2.7.1, TensorFlow 2.17.0, CUDA 12.8, cuDNN 9.3
-
-# Install TensorFlow with CUDA support
-# See available versions: https://pypi.org/project/tensorflow/#history
-pip install "tensorflow[and-cuda]==2.17.0" 
-
-# Install Torch 2.7.1 with CUDA 12.8
-# Note that it has to be installed before 
-pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128 
-
-# Install CUDA NVCC
-# Use Nvcc for CUDA 12.8 as per TensorFlow requirement.
-# See available versions: https://anaconda.org/nvidia/cuda-nvcc
-conda install nvidia/label/cuda-12.8.1::cuda-nvcc -y 
-
-# Install cuDNN
-# Use cuDNN 9.7.1 as per TensorFlow requirement.
-# See available versions: https://developer.nvidia.com/rdp/cudnn-archive
-# FIXME: This downgrades sqlite 3.45.3-h5eee18b_0 --> 3.31.1-h7b6447c_0
-conda install conda-forge::cudnn=9.7.1 -y 
-# conda install conda-forge::sqlite=3.45.3 -y 
-
-
-
-# Install the required packages
+# Install the required packages (torch and its CUDA runtime are pulled in
+# automatically by Sionna 2; do not install torch separately)
 if [ $INSTALL_DEPS ]; then
     echo "Installing requirements..."
-    pip install -r "$SCRIPT_PATH/requirements.txt" 
+    pip install $REQ
 else
     echo "Won't install the required packages."
 fi
 if [ $INSTALL_DEV_DEPS ]; then
     echo "Installing development requirements..."
-    pip install $DEV_REQUIREMENTS 
+    pip install $DEV_REQUIREMENTS
 else
     echo "Won't install the development packages."
 fi
@@ -201,7 +187,7 @@ conda clean --all -y
 
 # # Run the Python test scripts with specific names
 # tests_passed=true
-# declare -a test_scripts=("test_GPU_SimpleTrainNN_Tensorflow.py" "test_GPU_SimpleTrainNN_Torch.py" "Comparison_GPUandCPU_BigModel_Torch.py" "Comparison_GPUandCPU_BigModel_TensorFlow.py")
+# declare -a test_scripts=("test_GPU_SimpleTrainNN_Torch.py" "Comparison_GPUandCPU_BigModel_Torch.py")
 # for test_script in "${test_scripts[@]}"
 # do
 #     python "$SCRIPT_PATH/$test_script"

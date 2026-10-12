@@ -1,0 +1,12 @@
+name: ITU_R_M2135_UMa_uniform
+
+args:
+  scenario_model: ITU_R_M2135_UMa
+  ue_distribution: uniform
+  snapshots: 2
+  regression: true
+  save_results: 1
+  plots: false
+
+run:
+  example: EV

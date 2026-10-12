@@ -1,0 +1,7 @@
+# Those requirements are for unit tests specifically. The instrumented tests require a full environment to work
+numpy==2.5.2
+pyarrow==25.0.1
+# tests/test_saveable_registry.py imports giulia.outputs.saveable, and importing it runs
+# giulia/outputs/__init__.py, which eagerly imports utils and read_outputs -- both of which
+# import pandas. Pinned to the same version as environment.yml.
+pandas==3.0.3

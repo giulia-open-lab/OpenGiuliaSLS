@@ -1,0 +1,482 @@
+# Saveable Catalog
+
+This document is a **reference of every Saveable variable that Giulia can expose
+at runtime**, grouped by simulation preset. Use it to find the exact key to pass
+to the [`Monitor`](SaveAble_monitor.md) or to `Saveable.get()`.
+
+> The catalog lists at the **end** of this file are **auto-generated**.
+> Everything above the generated marker — this tutorial — is hand-written and is
+> preserved when the script is re-run.
+
+## What is in the catalog
+
+Each entry is a key in the `<ClassName>.<variable_name>` format, for example
+`Cell_Selection_SSB.best_serving_cell_ID_per_ue`. This is exactly the string
+accepted by:
+
+- `Saveable.get('<ClassName>.<variable_name>')` — read the current value, and
+- the [`Monitor`](SaveAble_monitor.md) — watch one or more of them live during a run.
+
+When a class documents a variable through `expose_variable_descriptions()`, that
+description is rendered as an indented sub-bullet right below the key:
+
+```
+### `BaseStations`
+- `BaseStations.cell_radio_unit_statuses`
+  - cell_radio_unit_statuses this is its desc
+```
+
+Variables whose class declares no description are listed without a sub-bullet.
+
+See [Saveable Objects](../source/saveable-objects.rst) for how a class becomes a
+Saveable.
+
+## Why it is split by preset
+
+The set of available variables is **not fixed**: it depends on which modules the
+simulation instantiates, which in turn depends on the **preset** and the
+**scenario**. Giulia ships two presets:
+
+- `GiuliaStd` — standard simulation.
+- `GiuliaMfl` — multi-frequency-layer simulation.
+
+Each is listed separately below, because a class present in one may be absent in
+the other.
+
+## How the catalog is generated
+
+The Saveable registry only fills up while a simulation runs, so the lists are
+produced by
+[`scripts/generate_saveable_catalog.py`](../../scripts/generate_saveable_catalog.py).
+For each preset it:
+
+1. Runs a **minimal** Giulia simulation (one short step, no saving, no plots, CPU).
+2. Reads the registered Saveables and the variables they expose.
+3. Writes the result into the generated section at the end of this file.
+
+Each preset is run in its **own subprocess**. The registry is scoped to an
+execution context and is never cleared within one, so running both presets
+sequentially on the same thread would let the first preset's variables leak into
+the second list. A subprocess gives each preset a context of its own — plus a
+clean PyTorch/GPU state. See
+[Saveable Concurrency](saveable-concurrency.md).
+
+## Regenerating this file
+
+From the repository root, run:
+
+```
+python scripts/generate_saveable_catalog.py
+```
+
+This **overwrites only the generated section** at the end (below the marker);
+this tutorial is left untouched. If the file — or the generated section — does
+not exist yet, it is created.
+
+> **Note.** Because the catalog depends on the preset and scenario, treat it as a
+> snapshot of those specific runs. To document a different scenario, edit the
+> `PRESETS` table at the top of the script and regenerate.
+
+## Configuration & the link to `config.yml`
+
+The catalog is **independent of `config.yml`**: it is not configured by it and does **not** honour
+its `output.fields` filter. Every regeneration lists **all** variables each preset exposes. The
+only "configuration" the catalog has is the `PRESETS` table at the top of
+[`scripts/generate_saveable_catalog.py`](../../scripts/generate_saveable_catalog.py) — a list of
+`(preset, label, scenario_model)` tuples:
+
+```python
+PRESETS = [
+    ("GiuliaStd", "Standard preset", "ITU_R_M2135_UMa"),
+    ("GiuliaMfl", "Multi-frequency layer preset", "ITU_R_M2135_UMa"),
+]
+```
+
+To document a different scenario (or add a preset), edit that table and re-run
+`python scripts/generate_saveable_catalog.py`. There is **no `config.yml` step**.
+
+The flow is **one-directional — the catalog feeds `config.yml`, never the reverse:**
+
+```
+edit PRESETS  ->  python scripts/generate_saveable_catalog.py  ->  this catalog (every key, per preset)
+                                                                        |
+                                            copy the keys you want      v
+                              config.yml  output.fields: [ <Class>.<var>, ... ]
+                                                                        |
+                                                  run the simulator     v
+                                                        filtered Parquet output
+```
+
+Use this catalog as the **menu** of valid `<Class>.<variable>` keys, then paste the subset you want
+into `output.fields` in [`config.yml`](../../config.yml) to trim a real run's output (see
+[Saveable Output & Export §6](saveable-output.md#6-selecting-which-columns-to-export-the-fields-filter)).
+Leaving `output.fields` empty exports everything; the catalog itself is unaffected either way.
+
+<!-- BEGIN GENERATED CATALOG — managed by scripts/generate_saveable_catalog.py; edits below this line are overwritten -->
+
+_These lists are generated by the script and reflect the presets in its `PRESETS` table._
+
+---
+
+## Standard preset — `GiuliaStd`
+
+50 Saveables · 38 variables.
+
+### `Antenna_Array_BS`
+
+### `Antenna_Array_UE`
+
+### `Antenna_Pattern_Gain`
+
+### `Array_Steering_Vector`
+
+### `BS_TX_Power`
+
+### `BaseStations`
+- `BaseStations.cell_radio_unit_statuses`
+  - Operational status of each cell's radio unit (e.g. active / carrier_shutdown) at each step.
+- `BaseStations.prb_usage_per_cell`
+  - Fraction of the available downlink PRBs used by each cell (0-1), averaged over the cell's available PRBs at each step.
+
+### `Beam_Conf_CSI_RS`
+
+### `Beam_Conf_SSB`
+
+### `Beam_Selection`
+- `Beam_Selection.best_serving_beam_ID_per_ue`
+  - ID of the serving CSI-RS beam (data channel) for each UE, where the selection is based on CSI-RS measurements.
+- `Beam_Selection.best_serving_beam_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving CSI-RS. Reflects the average received power of resource elements carrying such CSI-RS.
+- `Beam_Selection.ues_per_beam`
+  - Number of UEs served by each CSI-RS beam based on the corresponding CSI-RS-based selection.
+- `Beam_Selection.beam_activity_per_ue`
+  - Binary mask indicating the CSI-RS beams that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data.
+
+### `Cell_Re_Selection_CRS`
+
+### `Cell_Re_Selection_Conf`
+
+### `Cell_Re_Selection_SSB`
+
+### `Cell_Selection_CRS`
+- `Cell_Selection_CRS.best_serving_cell_ID_per_ue`
+  - ID of the serving cell for each UE, where the selection is based on measurements over the common reference signal (CRS). Used for LTE cells that do not employ massive MIMO arrays. In LTE or NR cells with massive MIMO arrays, this represents an association considering only the antenna gain from a single element, not from the full array.
+- `Cell_Selection_CRS.best_server_distance_3d_per_ue_m`
+  - 3D distance between each UE and its serving cell based on CRS-based selection.
+- `Cell_Selection_CRS.best_server_coupling_gain_per_ue_dB`
+  - Coupling gain between the UE and its serving cell based on CRS-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain.
+- `Cell_Selection_CRS.best_server_re_noise_per_ue_dBm`
+  - Received noise power per resource element at the UE, typically used in SNR or SINR computations for CRS.
+- `Cell_Selection_CRS.best_server_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving CRS. Reflects the average received power of resource elements carrying such CRS.
+- `Cell_Selection_CRS.ues_per_beam`
+  - Number of UEs associated with each cell based on CRS-based selection.
+- `Cell_Selection_CRS.beam_activity_per_ue`
+  - Binary mask indicating the cells that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data.
+
+### `Cell_Selection_SSB`
+- `Cell_Selection_SSB.best_serving_cell_ID_per_ue`
+  - ID of the serving cell for each UE, where the selection is based on measurements over the synchronization signal block (SSB). Used for LTE and NR cells that employ massive MIMO arrays. In LTE cells, there is only one SSB, which represents the CRS.
+- `Cell_Selection_SSB.best_server_distance_3d_per_ue_m`
+  - 3D distance between each UE and its serving cell based on SSB-based selection.
+- `Cell_Selection_SSB.best_server_coupling_gain_per_ue_dB`
+  - Coupling gain between the UE and its serving cell based on SSB-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain, considering SSB precoding.
+- `Cell_Selection_SSB.best_server_re_noise_per_ue_dBm`
+  - Received noise power per resource element at the UE, typically used in SNR or SINR computations for SSB.
+- `Cell_Selection_SSB.best_server_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving SSB. Reflects the average received power of resource elements carrying such SSB.
+- `Cell_Selection_SSB.best_serving_beam_ID_per_ue`
+  - ID of the serving SSB beam (coverage) for each UE, where the selection is based on SSB measurements.
+- `Cell_Selection_SSB.ues_per_beam`
+  - Number of UEs associated with each SSB beam based on the corresponding SSB-based selection.
+- `Cell_Selection_SSB.ues_per_cell`
+  - Number of UEs associated with each cell based on SSB-based selection.
+- `Cell_Selection_SSB.beam_activity_per_ue`
+  - Binary mask indicating the SSB beams that were actively transmitting from the UE's perspective at the time it performed the SSB measurement. Recall that SSB beams are swept sequentially over time.
+
+### `Channel`
+
+### `Distance_Angles_ueAnt_to_cellAnt`
+
+### `Distance_Angles_ue_to_cell`
+
+### `Fast_Fading_Gain`
+
+### `Hotspot`
+
+### `KFactor`
+
+### `LOSProbability`
+
+### `LoS_Channel`
+
+### `Lut_Bler_Vs_Sinr`
+
+### `Mutual_Information`
+
+### `Network`
+
+### `Noise`
+
+### `O2I_Penetration_Loss`
+
+### `Path_Loss`
+
+### `Power_Consumption`
+- `Power_Consumption.power_consumption_per_radio_unit_kW`
+  - Power consumed by each radio unit deployed in the network, excluding the power share of its attached BBU(s) (radio-only), measured in kilowatts (kW).
+- `Power_Consumption.P_base_band_W`
+  - Baseband processing power consumed by each baseband unit (BBU) in the network, measured in watts (W).
+- `Power_Consumption.power_consumption_per_radio_unit_incl_bbu_kW`
+  - The power consumed by each radio unit deployed in the network, including the power share of its attached BBU(s).
+
+### `Precoded_Channel_Gain_CSI_RS_ue_to_cell`
+
+### `Precoded_Channel_Gain_SSB_no_fast_fading_ue_to_cell`
+
+### `Precoded_Channel_Gain_SSB_ue_to_cell`
+
+### `RSRP_CRS_no_fast_fading`
+- `RSRP_CRS_no_fast_fading.rsrp_ue_to_cell_dBm`
+  - CRS RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for evaluating long-term signal strength and planning.
+
+### `RSRP_CSI_RS`
+
+### `RSRP_SSB`
+
+### `RSRP_SSB_no_fast_fading`
+- `RSRP_SSB_no_fast_fading.rsrp_ue_to_cell_dBm`
+  - SSB RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for long-term signal quality evaluation and planning.
+
+### `RSS_CSI_RS`
+
+### `RSS_SSB`
+
+### `Rate_based_on_eff_CSI_RS_SINR`
+- `Rate_based_on_eff_CSI_RS_SINR.ue_throughput_Mbps`
+  - Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed using the Shannon capacity formula and the effective SINR over all PRBs assigned to that UE.
+- `Rate_based_on_eff_CSI_RS_SINR.ue_flag_satisfied`
+  - Binary flag per UE indicating whether the UE's throughput requirement (target rate) was satisfied.
+- `Rate_based_on_eff_CSI_RS_SINR.cell_throughput_Mbps`
+  - Total downlink throughput achieved by each cell, measured in megabits per second (Mbps). Represents the aggregated data rate across all scheduled UEs served by that cell.
+
+### `Rate_based_on_ins_CSI_RS_SINR`
+- `Rate_based_on_ins_CSI_RS_SINR.ue_throughput_Mbps`
+  - Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed as the sum of the rates of all PRBs assigned to that UE. For each PRB, the rate is calculated using the Shannon capacity formula based on its instantaneous SINR.
+
+### `SINR_CRS`
+- `SINR_CRS.sinr_ue_to_cell_dB`
+  - SINR of the CRS measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful CRS power to interference plus noise.
+- `SINR_CRS.usefulPower_ue_dBm`
+  - Received power of the useful signal from the serving CRS for each UE, measured in decibels-milliwatts (dBm).
+- `SINR_CRS.interfPower_ue_dBm`
+  - Total interference power received by each UE over the serving CRS, measured in decibels-milliwatts (dBm).
+
+### `SINR_CSI_RS`
+- `SINR_CSI_RS.effective_sinr_ue_to_cell_dB`
+  - Effective SINR of each UE with respect to its assigned CSI-RS beam from the serving cell, measured in decibels (dB). Computed using a mapping function (e.g., EESM or MIESM) that aggregates the per-PRB SINRs allocated to the UE by that cell.
+
+### `SINR_SSB`
+- `SINR_SSB.sinr_ue_to_cell_dB`
+  - SINR of the SSB signal measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful signal power to interference plus noise.
+- `SINR_SSB.usefulPower_ue_dBm`
+  - Received power of the useful signal from the serving SSB beam for each UE, measured in decibels-milliwatts (dBm).
+- `SINR_SSB.interfPower_ue_dBm`
+  - Total interference power received by each UE over the serving SSB beam, measured in decibels-milliwatts (dBm).
+
+### `Shadowing_Gain`
+
+### `Shadowing_Map`
+
+### `Simulation_Config`
+
+### `Site_siteDeployment`
+
+### `Site_uePlaygroundDeployment`
+
+### `Slow_Channel`
+
+### `UE_Deployment`
+
+
+---
+
+## Multi-frequency layer preset — `GiuliaMfl`
+
+50 Saveables · 38 variables.
+
+### `Antenna_Array_BS`
+
+### `Antenna_Array_UE`
+
+### `Antenna_Pattern_Gain`
+
+### `Array_Steering_Vector`
+
+### `BS_TX_Power`
+
+### `BaseStations`
+- `BaseStations.cell_radio_unit_statuses`
+  - Operational status of each cell's radio unit (e.g. active / carrier_shutdown) at each step.
+- `BaseStations.prb_usage_per_cell`
+  - Fraction of the available downlink PRBs used by each cell (0-1), averaged over the cell's available PRBs at each step.
+
+### `Beam_Conf_CSI_RS`
+
+### `Beam_Conf_SSB`
+
+### `Beam_Selection`
+- `Beam_Selection.best_serving_beam_ID_per_ue`
+  - ID of the serving CSI-RS beam (data channel) for each UE, where the selection is based on CSI-RS measurements.
+- `Beam_Selection.best_serving_beam_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving CSI-RS. Reflects the average received power of resource elements carrying such CSI-RS.
+- `Beam_Selection.ues_per_beam`
+  - Number of UEs served by each CSI-RS beam based on the corresponding CSI-RS-based selection.
+- `Beam_Selection.beam_activity_per_ue`
+  - Binary mask indicating the CSI-RS beams that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data.
+
+### `Cell_Re_Selection_CRS`
+
+### `Cell_Re_Selection_Conf`
+
+### `Cell_Re_Selection_SSB`
+
+### `Cell_Selection_CRS`
+- `Cell_Selection_CRS.best_serving_cell_ID_per_ue`
+  - ID of the serving cell for each UE, where the selection is based on measurements over the common reference signal (CRS). Used for LTE cells that do not employ massive MIMO arrays. In LTE or NR cells with massive MIMO arrays, this represents an association considering only the antenna gain from a single element, not from the full array.
+- `Cell_Selection_CRS.best_server_distance_3d_per_ue_m`
+  - 3D distance between each UE and its serving cell based on CRS-based selection.
+- `Cell_Selection_CRS.best_server_coupling_gain_per_ue_dB`
+  - Coupling gain between the UE and its serving cell based on CRS-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain.
+- `Cell_Selection_CRS.best_server_re_noise_per_ue_dBm`
+  - Received noise power per resource element at the UE, typically used in SNR or SINR computations for CRS.
+- `Cell_Selection_CRS.best_server_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving CRS. Reflects the average received power of resource elements carrying such CRS.
+- `Cell_Selection_CRS.ues_per_beam`
+  - Number of UEs associated with each cell based on CRS-based selection.
+- `Cell_Selection_CRS.beam_activity_per_ue`
+  - Binary mask indicating the cells that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data.
+
+### `Cell_Selection_SSB`
+- `Cell_Selection_SSB.best_serving_cell_ID_per_ue`
+  - ID of the serving cell for each UE, where the selection is based on measurements over the synchronization signal block (SSB). Used for LTE and NR cells that employ massive MIMO arrays. In LTE cells, there is only one SSB, which represents the CRS.
+- `Cell_Selection_SSB.best_server_distance_3d_per_ue_m`
+  - 3D distance between each UE and its serving cell based on SSB-based selection.
+- `Cell_Selection_SSB.best_server_coupling_gain_per_ue_dB`
+  - Coupling gain between the UE and its serving cell based on SSB-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain, considering SSB precoding.
+- `Cell_Selection_SSB.best_server_re_noise_per_ue_dBm`
+  - Received noise power per resource element at the UE, typically used in SNR or SINR computations for SSB.
+- `Cell_Selection_SSB.best_server_rsrp_per_ue_dBm`
+  - Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving SSB. Reflects the average received power of resource elements carrying such SSB.
+- `Cell_Selection_SSB.best_serving_beam_ID_per_ue`
+  - ID of the serving SSB beam (coverage) for each UE, where the selection is based on SSB measurements.
+- `Cell_Selection_SSB.ues_per_beam`
+  - Number of UEs associated with each SSB beam based on the corresponding SSB-based selection.
+- `Cell_Selection_SSB.ues_per_cell`
+  - Number of UEs associated with each cell based on SSB-based selection.
+- `Cell_Selection_SSB.beam_activity_per_ue`
+  - Binary mask indicating the SSB beams that were actively transmitting from the UE's perspective at the time it performed the SSB measurement. Recall that SSB beams are swept sequentially over time.
+
+### `Channel`
+
+### `Distance_Angles_ueAnt_to_cellAnt`
+
+### `Distance_Angles_ue_to_cell`
+
+### `Fast_Fading_Gain`
+
+### `Hotspot`
+
+### `KFactor`
+
+### `LOSProbability`
+
+### `LoS_Channel`
+
+### `Lut_Bler_Vs_Sinr`
+
+### `Mutual_Information`
+
+### `Network`
+
+### `Noise`
+
+### `O2I_Penetration_Loss`
+
+### `Path_Loss`
+
+### `Power_Consumption`
+- `Power_Consumption.power_consumption_per_radio_unit_kW`
+  - Power consumed by each radio unit deployed in the network, excluding the power share of its attached BBU(s) (radio-only), measured in kilowatts (kW).
+- `Power_Consumption.P_base_band_W`
+  - Baseband processing power consumed by each baseband unit (BBU) in the network, measured in watts (W).
+- `Power_Consumption.power_consumption_per_radio_unit_incl_bbu_kW`
+  - The power consumed by each radio unit deployed in the network, including the power share of its attached BBU(s).
+
+### `Precoded_Channel_Gain_CSI_RS_ue_to_cell`
+
+### `Precoded_Channel_Gain_SSB_no_fast_fading_ue_to_cell`
+
+### `Precoded_Channel_Gain_SSB_ue_to_cell`
+
+### `RSRP_CRS_no_fast_fading`
+- `RSRP_CRS_no_fast_fading.rsrp_ue_to_cell_dBm`
+  - CRS RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for evaluating long-term signal strength and planning.
+
+### `RSRP_CSI_RS`
+
+### `RSRP_SSB`
+
+### `RSRP_SSB_no_fast_fading`
+- `RSRP_SSB_no_fast_fading.rsrp_ue_to_cell_dBm`
+  - SSB RSRP measured by each UE from its serving cell, excluding fast fading effects. Useful for long-term signal quality evaluation and planning.
+
+### `RSS_CSI_RS`
+
+### `RSS_SSB`
+
+### `Rate_based_on_eff_CSI_RS_SINR`
+- `Rate_based_on_eff_CSI_RS_SINR.ue_throughput_Mbps`
+  - Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed using the Shannon capacity formula and the effective SINR over all PRBs assigned to that UE.
+- `Rate_based_on_eff_CSI_RS_SINR.ue_flag_satisfied`
+  - Binary flag per UE indicating whether the UE's throughput requirement (target rate) was satisfied.
+- `Rate_based_on_eff_CSI_RS_SINR.cell_throughput_Mbps`
+  - Total downlink throughput achieved by each cell, measured in megabits per second (Mbps). Represents the aggregated data rate across all scheduled UEs served by that cell.
+
+### `Rate_based_on_ins_CSI_RS_SINR`
+- `Rate_based_on_ins_CSI_RS_SINR.ue_throughput_Mbps`
+  - Downlink throughput achieved by each UE, measured in megabits per second (Mbps), computed as the sum of the rates of all PRBs assigned to that UE. For each PRB, the rate is calculated using the Shannon capacity formula based on its instantaneous SINR.
+
+### `SINR_CRS`
+- `SINR_CRS.sinr_ue_to_cell_dB`
+  - SINR of the CRS measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful CRS power to interference plus noise.
+- `SINR_CRS.usefulPower_ue_dBm`
+  - Received power of the useful signal from the serving CRS for each UE, measured in decibels-milliwatts (dBm).
+- `SINR_CRS.interfPower_ue_dBm`
+  - Total interference power received by each UE over the serving CRS, measured in decibels-milliwatts (dBm).
+
+### `SINR_CSI_RS`
+- `SINR_CSI_RS.effective_sinr_ue_to_cell_dB`
+  - Effective SINR of each UE with respect to its assigned CSI-RS beam from the serving cell, measured in decibels (dB). Computed using a mapping function (e.g., EESM or MIESM) that aggregates the per-PRB SINRs allocated to the UE by that cell.
+
+### `SINR_SSB`
+- `SINR_SSB.sinr_ue_to_cell_dB`
+  - SINR of the SSB signal measured by each UE from its serving cell, expressed in decibels (dB). Computed as the ratio of useful signal power to interference plus noise.
+- `SINR_SSB.usefulPower_ue_dBm`
+  - Received power of the useful signal from the serving SSB beam for each UE, measured in decibels-milliwatts (dBm).
+- `SINR_SSB.interfPower_ue_dBm`
+  - Total interference power received by each UE over the serving SSB beam, measured in decibels-milliwatts (dBm).
+
+### `Shadowing_Gain`
+
+### `Shadowing_Map`
+
+### `Simulation_Config`
+
+### `Site_siteDeployment`
+
+### `Site_uePlaygroundDeployment`
+
+### `Slow_Channel`
+
+### `UE_Deployment`

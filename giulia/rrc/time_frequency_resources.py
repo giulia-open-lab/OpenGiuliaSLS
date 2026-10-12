@@ -4,11 +4,7 @@ Created on Wed Apr 19 10:37:25 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import copy
@@ -20,39 +16,51 @@ import sionna
 
 from giulia.channel import carriers
 from giulia.tools.tools import log_calculations_time
-from giulia.outputs.saveable import Saveable
 
-class Time_Frequency_Resources(Saveable):
+from giulia.logger import warning, error
+
+class Time_Frequency_Resources():
         
     def __init__(self, simulation_config_obj, network_deployment_obj, cell_antenna_array_structure_obj, cell_SSB_conf_obj, cell_CSI_RS_conf_obj):
 
-       super().__init__()
-
        ##### Plots 
        ########################
+        
        self.plot = 0 # Switch to control plots if any
        
        ##### Input storage 
        ########################   
        
        # Models 
+       
        self.simulation_config_obj = simulation_config_obj 
        self.network_deployment_obj = network_deployment_obj 
        self.cell_antenna_array_structure_obj = cell_antenna_array_structure_obj
        self.cell_SSB_conf_obj = cell_SSB_conf_obj
        self.cell_CSI_RS_conf_obj = cell_CSI_RS_conf_obj
-              
-       ##### Outputs 
-       ########################         
+                
        
-       # DL carriers list
+    def variables_list(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return [
+            "presetdl_carriers"
+        ]
+
+       
+    def process(self, rescheduling_us=-1): 
+       
+       # Initi Placeholders
        self.dl_carriers = []
        # Dictionary to store results for each frequency layer
-       self.dl_frequency_layer_info: Dict[float, Dict[str, Any]] = {}
-       
+       self.dl_frequency_layer_info: Dict[float | str, Dict[str, Any]] = {}
        # UL carriers list
-       self.ul_carriers = []   
+       self.ul_carriers = []  
+
        
+       # Start timer       
+       t_start = time.perf_counter()    
+
+       # Prepare placeholders
        # Indeces indicating the DL and UL carrier of each cell
        self.dl_carrier_index = np.full(len(self.network_deployment_obj.df_ep), -1, dtype=int)  
        self.ul_carrier_index = np.full(len(self.network_deployment_obj.df_ep), -1, dtype=int)   
@@ -61,8 +69,10 @@ class Time_Frequency_Resources(Saveable):
        self.cell_by_cell_ul_carrier_mask = np.zeros((len(self.network_deployment_obj.df_ep),len(self.network_deployment_obj.df_ep)), dtype=bool)
        
        self.SSB_beam_by_SSB_beam_dl_carrier_mask = np.zeros((len(self.network_deployment_obj.df_ep),len(self.network_deployment_obj.df_ep)), dtype=bool)
+       #self.SSB_beam_by_SSB_beam_ul_carrier_mask = np.zeros((len(self.network_deployment_obj.df_ep),len(self.network_deployment_obj.df_ep)), dtype=bool)
        
        self.CSI_RS_beam_by_CSI_RS_beam_dl_carrier_mask = np.zeros((len(self.network_deployment_obj.df_ep),len(self.network_deployment_obj.df_ep)), dtype=bool)
+       #self.CSI_RS_beam_by_CSI_RS_beam_ul_carrier_mask = np.zeros((len(self.network_deployment_obj.df_ep),len(self.network_deployment_obj.df_ep)), dtype=bool)   
        
        # Sionna related  
        self.dl_resource_grid = [] # DL resource grid list 
@@ -70,22 +80,13 @@ class Time_Frequency_Resources(Saveable):
        
        self.dl_resource_grid_index = np.full(len(self.network_deployment_obj.df_ep), -1, dtype=int)   # Indeces indicating the DL resource grid of each cell
        self.ul_resource_grid_index = np.full(len(self.network_deployment_obj.df_ep), -1, dtype=int)   # Indeces indicating the UL resource grid of each cell  
-
-
-    def variables_list(self) -> List[str]:
-        """List of attributes name to be saved."""
-        return ["presetdl_carriers"]
-
        
-    def process(self, rescheduling_us=-1): 
-       
-       # Start timer       
-       t_start = time.perf_counter()    
        
        # Store key information relating to all cells, independently of the frequency layer
        num_cells = len(self.network_deployment_obj.df_ep)
+       
        self.dl_frequency_layer_info["all_freq"] = {
-           "available_PRBs": self.network_deployment_obj.df_ep['dl_PRBs_available'].iloc[0],
+           "max_available_PRBs": self.network_deployment_obj.df_ep['dl_PRBs_available'].max(),
            "cells_in_frequency_mask":  np.ones((num_cells,), dtype=bool),
            "cell_IDs": np.arange(0, num_cells),  # List of cell IDs
            "num_cells": num_cells,
@@ -117,17 +118,22 @@ class Time_Frequency_Resources(Saveable):
        # Iterate over the DL carriers
        index = 0
        for model_params, group in grouped_dl: 
+           
            self.dl_carrier_index[group['ID']] = index
+           
            obj = carriers.Carrier(True,
                                   group['ID'],
                                   group['antenna_config_number_of_elements'],
+                                  #df_ue_ep['antenna_config_number_of_elements'],
                                   model_params[0], model_params[1], model_params[2], model_params[3], model_params[4], 
                                   model_params[5], model_params[6], model_params[7], model_params[8], model_params[9])
            
            self.dl_carriers.append(obj)
            
            if self.simulation_config_obj.sn_indicator == 1 :
+               
                self.dl_resource_grid_index[group['ID']] = index
+               
                dl_rg = sionna.phy.ofdm.ResourceGrid(num_ofdm_symbols = 1,#model_params[4]
                                                 fft_size = model_params[6],#model_params[6]*model_params[3]
                                                 subcarrier_spacing = model_params[7] * 1e3 * model_params[3],#model_params[7] 
@@ -143,7 +149,7 @@ class Time_Frequency_Resources(Saveable):
                
            # Identify cells and antennas operating in the current carrier
            dl_carrier_frequency_GHz = group['dl_carrier_frequency_GHz'].iloc[0]
-           available_PRBs = group['dl_PRBs_available'].iloc[0]
+           max_available_PRBs = group['dl_PRBs_available'].max()
            antenna_to_node_a_mapping: np.ndarray = self.cell_antenna_array_structure_obj.antenna_to_node_mapping
            cells_in_frequency_mask: np.ndarray = self.network_deployment_obj.df_ep['dl_carrier_frequency_GHz'].to_numpy() ==  dl_carrier_frequency_GHz 
            cell_IDs_in_frequency: np.ndarray = np.flatnonzero(cells_in_frequency_mask)  # Indices of cells in frequency
@@ -157,7 +163,7 @@ class Time_Frequency_Resources(Saveable):
 
            # Store key information in the dictionary, per frequency layer
            self.dl_frequency_layer_info[dl_carrier_frequency_GHz] = {
-               "available_PRBs": available_PRBs,
+               "max_available_PRBs": max_available_PRBs,
                "cells_in_frequency_mask": cells_in_frequency_mask,
                "cell_IDs": cell_IDs_in_frequency,
                "num_cells": num_cells_in_frequency,
@@ -188,17 +194,21 @@ class Time_Frequency_Resources(Saveable):
        
        # Iterate over the DL carriers
        for model_params, group in grouped_ul:
+           
            self.ul_carrier_index[group['ID']] = index
+           
            obj = carriers.Carrier(False,
                                   group['ID'],
                                   group['antenna_config_number_of_elements'],
-                                  model_params[0], model_params[1], model_params[2], model_params[3], model_params[4], 
-                                  model_params[5], model_params[6], model_params[7], model_params[8], model_params[9])
+                                  #df_ue_ep['antenna_config_number_of_elements'],
+                                  model_params[0], model_params[1], model_params[2], model_params[3], model_params[4], model_params[5], model_params[6], model_params[7], model_params[8], model_params[9])
            
            self.ul_carriers.append(obj)  
            
            if self.simulation_config_obj.sn_indicator == 1 :
+               
                self.ul_resource_grid_index[group['ID']] = index
+               
                ul_rg = sionna.phy.ofdm.ResourceGrid(num_ofdm_symbols = 1,#model_params[4]
                                                 fft_size = model_params[6],#model_params[6]*model_params[3]
                                                 subcarrier_spacing = model_params[7] * 1e3 * model_params[3], #model_params[7]
@@ -214,6 +224,7 @@ class Time_Frequency_Resources(Saveable):
            index += 1
            
        # Create a 2D array indicating whether each element coincides with any other element in the original array
+       
        self.cell_by_cell_dl_carrier_mask = self.dl_carrier_index[:, np.newaxis] == self.dl_carrier_index
        self.cell_by_cell_ul_carrier_mask = self.ul_carrier_index[:, np.newaxis] == self.ul_carrier_index
        
@@ -224,6 +235,7 @@ class Time_Frequency_Resources(Saveable):
        self.CSI_RS_beam_by_CSI_RS_beam_dl_carrier_mask = extended_dl_carrier_index[:, np.newaxis] == extended_dl_carrier_index       
 
        # Adding the indeces of the resource grid to the self.network_deployment_obj.df_ep
+       
        self.network_deployment_obj.df_ep['dl_carrier_index'] = self.dl_carrier_index
        self.network_deployment_obj.df_ep['ul_carrier_index'] = self.ul_carrier_index       
        self.network_deployment_obj.df_ep['dl_resource_grid_index'] = self.dl_resource_grid_index
@@ -236,8 +248,9 @@ class Time_Frequency_Resources(Saveable):
 
        
     def beams_in_same_carrier_than_serving_beam(self, beam_type, best_serving_beam_of_ue):
-       # This method creates a cell by cell or a beam by beam 2D array in which 
-       # each row indicates if the cell or beam with that index uses the same carrier frequency as any other cell or beam 
+       
+       # This method creates a cell by cell or a beam by beam 2D array in which each row indicates if the cell or beam with that index uses the same carrier frequency as any other cell or beam 
+       
        if beam_type == "antenna element" :
            beams_in_same_carrier_than_server = self.cell_by_cell_dl_carrier_mask[best_serving_beam_of_ue]
            
@@ -248,11 +261,11 @@ class Time_Frequency_Resources(Saveable):
            beams_in_same_carrier_than_server = self.CSI_RS_beam_by_CSI_RS_beam_dl_carrier_mask[best_serving_beam_of_ue]
       
        return beams_in_same_carrier_than_server
-
    
     def beams_in_same_carrier_than_servring_cell(self, beam_type, beam_to_node_mapping, best_serving_cell_of_ue):
-       # This method creates a cell by cell or a beam by beam 2D array in which 
-       # each row indicates if the cell or beam with that index uses the same carrier frequency as any other cell or beam 
+       
+       # This method creates a cell by cell or a beam by beam 2D array in which each row indicates if the cell or beam with that index uses the same carrier frequency as any other cell or beam 
+       
        if beam_type == "antenna element" :
            beams_in_same_carrier_than_server = self.cell_by_cell_dl_carrier_mask[best_serving_cell_of_ue]
            
@@ -266,7 +279,6 @@ class Time_Frequency_Resources(Saveable):
       
        return beams_in_same_carrier_than_server
    
-
     def update_ue_info(
         self, 
         ue_deployment_obj: Any,
@@ -298,7 +310,6 @@ class Time_Frequency_Resources(Saveable):
                 
         return rescheduling_us
     
-    
     def update_ue_carrier_info(
         self, 
         ue_antenna_array_structure_obj: Any, 
@@ -318,6 +329,8 @@ class Time_Frequency_Resources(Saveable):
         Returns:
             int: The updated rescheduling time in microseconds.
         """
+        # Start timer       
+        t_start = time.perf_counter()    
             
         # Update dictionary --all per frequency layer entries-- without overwriting existing keys
         
@@ -353,7 +366,7 @@ class Time_Frequency_Resources(Saveable):
             all_freq_data = copy.deepcopy(SSB_RSRP_no_fast_fading_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"])
             
             # Set up a fresh multi-layer structure without modifying "all_freq"
-            SSB_RSRP_no_fast_fading_ue_to_cell_obj.RSRP_results_per_frequency_layer = copy.deepcopy(self.dl_frequency_layer_info)
+            SSB_RSRP_no_fast_fading_ue_to_cell_obj.RSRP_results_per_frequency_layer = {key: {} for key in self.dl_frequency_layer_info.keys()} #copy.deepcopy(self.dl_frequency_layer_info)
             
             # Reinsert "all_freq" to ensure it remains unchanged
             SSB_RSRP_no_fast_fading_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"] = all_freq_data
@@ -362,14 +375,16 @@ class Time_Frequency_Resources(Saveable):
             for frequency_key, frequency_layer_info in SSB_RSRP_no_fast_fading_ue_to_cell_obj.RSRP_results_per_frequency_layer.items():
                 if frequency_key == "all_freq":
                     continue  # Ensure "all_freq" remains unchanged
+
+                # Get the corresponding resource information for the current frequency layer
+                time_frequency_resource_info: Dict[str, Any] = self.dl_frequency_layer_info[frequency_key]
         
                 # Extract and store RSRP information for each layer
                 frequency_layer_info["RSRP_ue_to_cell_dBm"] = RSRP_ue_to_cell_all_layers_dBm[
-                    np.ix_(frequency_layer_info["ues_in_frequency_mask"], frequency_layer_info["ssb_beams_in_frequency_mask"])
+                    np.ix_(time_frequency_resource_info["ues_in_frequency_mask"], time_frequency_resource_info["ssb_beams_in_frequency_mask"])
                 ]
                  
-        return rescheduling_us
 
-        
-       
-       
+        log_calculations_time('Time frequency resource - Update Carrier Info', t_start)
+
+        return rescheduling_us

@@ -3,113 +3,134 @@
 """
 Created on Tue Mar 14 10:27:04 2023
 
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+@author: dalopezperez
 """
 
 import numpy as np 
 
 def bandwidth_to_PRBs(bandwidth_MHz, subcarrier_spacing_Hz):
-    
     # BW(j)- band Bandwidth, MHz (3GPP 38.104)
     # Section 5.3.2 Transmission bandwidth configuration
-    if bandwidth_MHz == 1.4 and subcarrier_spacing_Hz == 15 : PRBs = 6  
-    elif bandwidth_MHz == 5 and subcarrier_spacing_Hz == 15 : PRBs = 25  
-    elif bandwidth_MHz == 10 and subcarrier_spacing_Hz == 15 : PRBs = 50 #52       
-    elif bandwidth_MHz == 15 and subcarrier_spacing_Hz == 15 : PRBs = 75 #79         
-    elif bandwidth_MHz == 20 and subcarrier_spacing_Hz == 15 : PRBs = 100 #106  
-    elif bandwidth_MHz == 25 and subcarrier_spacing_Hz == 15 : PRBs = 133  
-    elif bandwidth_MHz == 30 and subcarrier_spacing_Hz == 15 : PRBs = 160   
-    elif bandwidth_MHz == 35 and subcarrier_spacing_Hz == 15 : PRBs = 188  
-    elif bandwidth_MHz == 40 and subcarrier_spacing_Hz == 15 : PRBs = 216  
-    elif bandwidth_MHz == 45 and subcarrier_spacing_Hz == 15 : PRBs = 242   
-    elif bandwidth_MHz == 50 and subcarrier_spacing_Hz == 15 : PRBs = 270  
-    elif bandwidth_MHz == 5 and subcarrier_spacing_Hz == 30 : PRBs = 11  
-    elif bandwidth_MHz == 10 and subcarrier_spacing_Hz == 30 : PRBs = 24  
-    elif bandwidth_MHz == 15 and subcarrier_spacing_Hz == 30 : PRBs = 38         
-    elif bandwidth_MHz == 20 and subcarrier_spacing_Hz == 30 : PRBs = 51  
-    elif bandwidth_MHz == 25 and subcarrier_spacing_Hz == 30 : PRBs = 65  
-    elif bandwidth_MHz == 30 and subcarrier_spacing_Hz == 30 : PRBs = 78   
-    elif bandwidth_MHz == 35 and subcarrier_spacing_Hz == 30 : PRBs = 92  
-    elif bandwidth_MHz == 40 and subcarrier_spacing_Hz == 30 : PRBs = 106  
-    elif bandwidth_MHz == 45 and subcarrier_spacing_Hz == 30 : PRBs = 119  
-    elif bandwidth_MHz == 50 and subcarrier_spacing_Hz == 30 : PRBs = 133  
-    elif bandwidth_MHz == 60 and subcarrier_spacing_Hz == 30 : PRBs = 162  
-    elif bandwidth_MHz == 70 and subcarrier_spacing_Hz == 30 : PRBs = 189  
-    elif bandwidth_MHz == 80 and subcarrier_spacing_Hz == 30 : PRBs = 217  
-    elif bandwidth_MHz == 90 and subcarrier_spacing_Hz == 30 : PRBs = 245  
-    elif bandwidth_MHz == 100 and subcarrier_spacing_Hz == 30 : PRBs = 273  
-    elif bandwidth_MHz == 10 and subcarrier_spacing_Hz == 60 : PRBs = 11    
-    elif bandwidth_MHz == 15 and subcarrier_spacing_Hz == 60 : PRBs = 18  
-    elif bandwidth_MHz == 20 and subcarrier_spacing_Hz == 60 : PRBs = 24  
-    elif bandwidth_MHz == 25 and subcarrier_spacing_Hz == 60 : PRBs = 31  
-    elif bandwidth_MHz == 30 and subcarrier_spacing_Hz == 60 : PRBs = 38  
-    elif bandwidth_MHz == 35 and subcarrier_spacing_Hz == 60 : PRBs = 44  
-    elif bandwidth_MHz == 40 and subcarrier_spacing_Hz == 60 : PRBs = 51  
-    elif bandwidth_MHz == 45 and subcarrier_spacing_Hz == 60 : PRBs = 58  
-    elif bandwidth_MHz == 50 and subcarrier_spacing_Hz == 60 : PRBs = 65   
-    elif bandwidth_MHz == 60 and subcarrier_spacing_Hz == 60 : PRBs = 79 
-    elif bandwidth_MHz == 70 and subcarrier_spacing_Hz == 60 : PRBs = 93  
-    elif bandwidth_MHz == 80 and subcarrier_spacing_Hz == 60 : PRBs = 107  
-    elif bandwidth_MHz == 90 and subcarrier_spacing_Hz == 60 : PRBs = 121 
-    
-    elif bandwidth_MHz == 100 and subcarrier_spacing_Hz == 60 : PRBs = 135 
-    elif bandwidth_MHz == 100 and subcarrier_spacing_Hz == 120 : PRBs = 90 # Made up config to speed up procesing      
-    elif bandwidth_MHz == 100 and subcarrier_spacing_Hz == 240 : PRBs = 45 # Made up config to speed up procesing  
-    
-    elif bandwidth_MHz == 200 and subcarrier_spacing_Hz == 120 : PRBs = 135
-    elif bandwidth_MHz == 200 and subcarrier_spacing_Hz == 240 : PRBs = 90 # Made up config to speed up procesing      
-    elif bandwidth_MHz == 200 and subcarrier_spacing_Hz == 360 : PRBs = 45 # Made up config to speed up procesing         
-    
-    elif bandwidth_MHz == 400 and subcarrier_spacing_Hz == 240 : PRBs = 135
-    elif bandwidth_MHz == 400 and subcarrier_spacing_Hz == 480 : PRBs = 90 # Made up config to speed up procesing    
-    elif bandwidth_MHz == 400 and subcarrier_spacing_Hz == 720 : PRBs = 45 # Made up config to speed up procesing    
+    # Key: (bandwidth_MHz, subcarrier_spacing_Hz) -> PRBs
+    PRBs_table = {
+        (1.4, 15): 6,
+        (5,   15): 25,
+        (10,  15): 50,   # 52
+        (15,  15): 75,   # 79
+        (20,  15): 100,  # 106
+        (25,  15): 133,
+        (30,  15): 160,
+        (35,  15): 188,
+        (40,  15): 216,
+        (45,  15): 242,
+        (50,  15): 270,
+        (5,   30): 11,
+        (10,  30): 24,
+        (15,  30): 38,
+        (20,  30): 51,
+        (25,  30): 65,
+        (30,  30): 78,
+        (35,  30): 92,
+        (40,  30): 106,
+        (45,  30): 119,
+        (50,  30): 133,
+        (60,  30): 162,
+        (70,  30): 189,
+        (80,  30): 217,
+        (90,  30): 245,
+        (100, 30): 273,
+        (10,  60): 11,
+        (15,  60): 18,
+        (20,  60): 24,
+        (25,  60): 31,
+        (30,  60): 38,
+        (35,  60): 44,
+        (40,  60): 51,
+        (45,  60): 58,
+        (50,  60): 65,
+        (60,  60): 79,
+        (70,  60): 93,
+        (80,  60): 107,
+        (90,  60): 121,
+        (100, 60): 135,
+        (100, 120): 90,   # Made up config to speed up procesing
+        (100, 240): 45,   # Made up config to speed up procesing
+        (200, 120): 132,
+        (200, 240): 90,   # Made up config to speed up procesing
+        (200, 360): 45,   # Made up config to speed up procesing
+        (400, 240): 135,
+        (400, 480): 90,   # Made up config to speed up procesing
+        (400, 720): 45,   # Made up config to speed up procesing
+    }
 
-    else:
-        raise ValueError(f"Unsupported bandwidth and subcarrier spacing combination (bandwidth_MHz: {bandwidth_MHz}, subcarrier_spacing_Hz: {subcarrier_spacing_Hz})")
-                
-    return PRBs 
+    key = (bandwidth_MHz, subcarrier_spacing_Hz)
+    if key not in PRBs_table:
+        # Group valid bandwidths by subcarrier spacing for a readable error message
+        bw_by_scs: dict = {}
+        for bw, scs in PRBs_table.keys():
+            bw_by_scs.setdefault(scs, []).append(bw)
+
+        header_scs = "Sub Carrier Spacing (SCS) [Hz]"
+        header_bw  = "Valid Bandwidth [MHz]"
+        rows = [(str(scs), ", ".join(str(bw) for bw in sorted(bws)))
+                for scs, bws in sorted(bw_by_scs.items())]
+
+        scs_width = max(len(header_scs), max(len(r[0]) for r in rows))
+        bw_width  = max(len(header_bw),  max(len(r[1]) for r in rows))
+
+        sep = f"  {'-' * scs_width}-+-{'-' * bw_width}"
+        table_lines = [
+            f"  {header_scs:<{scs_width}} | {header_bw}",
+            sep,
+            *[f"  {scs:<{scs_width}} | {bws}" for scs, bws in rows],
+        ]
+        valid_combinations = "\n".join(table_lines)
+
+        raise ValueError(
+            f"Invalid combination (bandwidth_MHz={bandwidth_MHz}, "
+            f"subcarrier_spacing_Hz={subcarrier_spacing_Hz}).\n"
+            f"Valid combinations are:\n{valid_combinations}"
+        )
+
+    return PRBs_table[key]
 
 
-def ofdm_symbol_duration(subcarrier_spacing_kHz): 
-    
-    if subcarrier_spacing_kHz == 15 :
-        nu = 0
-    elif subcarrier_spacing_kHz == 30 :
-        nu = 1 
-    elif subcarrier_spacing_kHz == 60 : 
-        nu = 2  
-    elif subcarrier_spacing_kHz == 120 : 
-        nu = 3  
-    else: 
-        nu = 4          
-        
-        #https://www.techplayon.com/5g-nr-physical-layer-timing-unit/
-        #https://www.techplayon.com/5g-nr-cyclic-prefix-cp-design/
-        
+def ofdm_symbol_duration(subcarrier_spacing_kHz):
+
+    # https://www.techplayon.com/5g-nr-physical-layer-timing-unit/
+    # https://www.techplayon.com/5g-nr-cyclic-prefix-cp-design/
+    # Key: subcarrier_spacing_kHz -> nu (numerology index)
+    # Any value not in the table falls back to nu = 4 (matches original behavior).
+    nu_table = {
+        15:  0,
+        30:  1,
+        60:  2,
+        120: 3,
+    }
+
+    # Use dict.get() to return the nu for the given subcarrier spacing, or 4 if it's not in the table.
+    nu = nu_table.get(subcarrier_spacing_kHz, 4)
+
     kappa = 64
     Ts = 1 / (15 * 1e3 * 2048)
     Tc = 1 / (480 * 1e3 * 4096)
-    cp_us = 144 * kappa * np.power(2.0,-nu) * Ts / kappa * 1e6
-        
-    ofdm_symbol_duration_us = 1e3 / (14*np.power(2,nu)) - cp_us
-    
-    return ofdm_symbol_duration_us 
+    cp_us = 144 * kappa * np.power(2.0, -nu) * Ts / kappa * 1e6
+
+    ofdm_symbol_duration_us = 1e3 / (14*np.power(2, nu)) - cp_us
+
+    return ofdm_symbol_duration_us
 
 
 def control_channel_overhead(subcarrier_spacing_kHz):
-    
-    #OH(j) -overhead for control channels (3GPP 38.306)
-    #The value represents a percentage
-    
-    if subcarrier_spacing_kHz == 15 or subcarrier_spacing_kHz == 30 or subcarrier_spacing_kHz == 60 :
-        control_channel_overhead = 0.14   
-    else: 
-        control_channel_overhead = 0.18   
-    
-    return control_channel_overhead     
+
+    # OH(j) - overhead for control channels (3GPP 38.306)
+    # The value represents a percentage
+    # Key: subcarrier_spacing_kHz -> control channel overhead
+    # Any value not in the table falls back to 0.18 (matches original behavior).
+    overhead_table = {
+        15: 0.14,
+        30: 0.14,
+        60: 0.14,
+    }
+    # Use dict.get() to return the overhead for the given subcarrier spacing, or 0.18 if it's not in the table.
+    return overhead_table.get(subcarrier_spacing_kHz, 0.18)

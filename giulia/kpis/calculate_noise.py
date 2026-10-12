@@ -2,13 +2,7 @@
 """
 Created on Wed Apr 19 17:48:13 2023
 
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+@author: dalopezperez
 """
 
 import time
@@ -50,9 +44,12 @@ class Noise(Saveable):
         self.dl_noise_per_resource_element_ue_to_cell_dBm: np.ndarray = np.array([])  # Noise per resource element
 
 
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["dl_noise_full_bandwidth_ue_to_cell_dBm"]
+        return []
 
 
     def process(self, rescheduling_us: int = -1) -> int:
@@ -77,18 +74,19 @@ class Noise(Saveable):
         t_start: float = time.perf_counter()
 
         # Calculate noise power over the full bandwidth
-        self.dl_noise_full_bandwidth_ue_to_cell_dBm = \
-            self.dl_noise_full_bandwidth(dl_bandwidth_MHz, noise_figure_dB)
+        self.dl_noise_full_bandwidth_ue_to_cell_dBm = self.dl_noise_full_bandwidth(
+            dl_bandwidth_MHz, noise_figure_dB
+        )
 
         # Calculate noise power per resource element
-        self.dl_noise_per_resource_element_ue_to_cell_dBm = \
-            self.dl_noise_per_resource_element(dl_bandwidth_MHz, dl_PRBs_available, subcarriers_per_PRB, noise_figure_dB)
+        self.dl_noise_per_resource_element_ue_to_cell_dBm = self.dl_noise_per_resource_element(
+            dl_bandwidth_MHz, dl_PRBs_available, subcarriers_per_PRB, noise_figure_dB
+        )
 
         # Print elapsed time
         log_calculations_time('Noise', t_start)
 
         return rescheduling_us
-
 
     def dl_noise_full_bandwidth(
         self,
@@ -123,7 +121,6 @@ class Noise(Saveable):
 
         # Convert noise power to dBm and add noise figure
         return tools.mW_to_dBm(noise_power_mW) + noise_figure_ue_cell_dBm
-
 
     def dl_noise_per_resource_element(
         self,

@@ -6,7 +6,6 @@ import psutil
 import matplotlib.pyplot as plt
 import numpy as np  # Import numpy
 
-
 def clear_console():
     """
     Clears the terminal based on the operating system.
@@ -15,7 +14,6 @@ def clear_console():
         os.system("cls")
     else:
         os.system("clear")
-
 
 def monitor_gpu_python_processes(refresh_interval=1.0, duration=None):
     """
@@ -121,7 +119,6 @@ def monitor_gpu_python_processes(refresh_interval=1.0, duration=None):
     # Return the history list containing all memory consumption records.
     return memory_usage_history
 
-
 def plot_memory_usage(history):
     """
     Plots the GPU memory usage history.
@@ -160,10 +157,8 @@ def plot_memory_usage(history):
     plt.title("GPU Memory Usage Over Time for Python Processes")
     plt.legend()
     plt.grid(True)
-    plt.ylim(bottom=0)
+    plt.ylim(bottom=0)  # Set the y-axis bottom to 0
     plt.show()
-
-
 
 if __name__ == "__main__":
     # Set the duration (in seconds) for monitoring; for example, 10 seconds.

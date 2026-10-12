@@ -4,17 +4,13 @@ Created on Wed Apr 19 17:48:13 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import time
-from typing import Any, Dict, List
 
 import numpy as np
+from typing import Any, Dict, List
 
 from giulia.event_driven.snapshot_control import Snapshot_control
 from giulia.fs import results_file
@@ -76,16 +72,16 @@ class Cell_Selection(Saveable):
         self.best_serving_cell_ID_per_ue: np.ndarray = np.array([])
         self.ue_association_results_per_frequency_layer: Dict[float, Dict[str, Any]] = {}
 
-    def variables_list(self) -> List[str]:
-        return [
-            "best_server_distance_3d_per_ue_m",
-            "best_server_coupling_gain_per_ue_dB",
-            "best_serving_cell_ID_per_ue",
-            "best_server_rsrp_per_ue_dBm",
-            "best_server_re_noise_per_ue_dBm",
-            "beam_activity_per_ue",
-            "ues_per_beam",
-        ]
+
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved.
+
+        Concrete (non-abstract) on the base class so the base ``Cell_Selection`` can be
+        instantiated directly — e.g. by the pairing sub-run, which needs cell selection
+        for its internal computation but saves nothing. Subclasses override this to export
+        their KPIs.
+        """
+        return ['ues_per_cell']
 
     def process(self, rescheduling_us: int = -1) -> int:
         """
@@ -102,9 +98,10 @@ class Cell_Selection(Saveable):
 
         # Perform cell and beam selection
         if self.compute_type == "strongest_rsrp":
-            self.best_serving_beam_ID_per_ue, self.best_serving_cell_ID_per_ue = \
-                self.strongest_rsrp(self.beam_conf_obj,
-                                    self.RSRP_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"]["RSRP_ue_to_cell_dBm"],)
+            self.best_serving_beam_ID_per_ue, self.best_serving_cell_ID_per_ue = self.strongest_rsrp(
+                self.beam_conf_obj,
+                self.RSRP_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"]["RSRP_ue_to_cell_dBm"],
+            )
 
         # Log elapsed time
         log_calculations_time('Cell selection', t_start)
@@ -116,7 +113,7 @@ class Cell_Selection(Saveable):
         self,
         beam_conf_obj: Any,
         rsrp_ue_to_cell_dBm: np.ndarray,
-    ) -> (np.ndarray, np.ndarray):
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Finds the strongest RSRP for each UE.
 
@@ -129,7 +126,8 @@ class Cell_Selection(Saveable):
             - Best serving cell ID for each UE.
         """
         # Determine beam-to-cell mapping
-        beam_to_node_mapping = np.arange(rsrp_ue_to_cell_dBm.shape[1]) if beam_conf_obj is None else beam_conf_obj.beam_to_node_mapping
+        beam_to_node_mapping = np.arange(rsrp_ue_to_cell_dBm.shape[1]) \
+            if beam_conf_obj is None else beam_conf_obj.beam_to_node_mapping
         
         # Find the strongest RSRP
         best_serving_beam_ID_per_ue = np.argmax(rsrp_ue_to_cell_dBm, axis=-1)
@@ -169,14 +167,14 @@ class Cell_Selection(Saveable):
             coupling_gain_ue_to_cell_dB: np.ndarray =\
                 self.channel_gain_ue_to_cell_obj.slow_channel_results_per_frequency_layer["all_freq"]["slow_channel_gain_b_to_a_dB"].astype(np.float32)
             
+            
         else:  # Multiple beams per cell
             coupling_gain_ue_to_cell_dB: np.ndarray =\
                 self.channel_gain_ue_to_cell_obj.precoded_channel_gain_results_per_frequency_layer["all_freq"]["precoded_channel_gain_b_to_a_dB"]
+            
     
         # 4. Extract RSRP and noise values
-        rsrp_ue_to_cell_dBm: np.ndarray = \
-            self.RSRP_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"]["RSRP_ue_to_cell_dBm"]
-        
+        rsrp_ue_to_cell_dBm: np.ndarray = self.RSRP_ue_to_cell_obj.RSRP_results_per_frequency_layer["all_freq"]["RSRP_ue_to_cell_dBm"]
         dl_full_bandwidth_noise_dBm: np.ndarray = self.dl_noise_ue_to_cell_obj.dl_noise_per_resource_element_ue_to_cell_dBm
     
         # 5. Define UE IDs
@@ -184,28 +182,42 @@ class Cell_Selection(Saveable):
     
         # 6. Calculate statistics for the best server (cell/beam with strongest RSRP)
         # Get 3D distances
-        self.best_server_distance_3d_per_ue_m: np.ndarray = distance_3d_ue_to_cell_m[ue_IDs, self.best_serving_cell_ID_per_ue]
+        self.best_server_distance_3d_per_ue_m: np.ndarray = distance_3d_ue_to_cell_m[
+            ue_IDs, self.best_serving_cell_ID_per_ue
+        ]
     
         # Calculate coupling gain
         if coupling_gain_ue_to_cell_dB.ndim == 3:  # Beam-level gain (3D tensor)
-            self.best_server_coupling_gain_per_ue_dB: np.ndarray = \
-                tools.mW_to_dBm(np.mean(tools.dBm_to_mW(coupling_gain_ue_to_cell_dB[:, ue_IDs, self.best_serving_beam_ID_per_ue]),axis=0,))
+            self.best_server_coupling_gain_per_ue_dB: np.ndarray = tools.mW_to_dBm(
+                np.mean(
+                    tools.dBm_to_mW(coupling_gain_ue_to_cell_dB[:, ue_IDs, self.best_serving_beam_ID_per_ue]),
+                    axis=0,
+                )
+            )
         else:  # Cell-level gain (2D tensor)
-            self.best_server_coupling_gain_per_ue_dB: np.ndarray = coupling_gain_ue_to_cell_dB[ue_IDs, self.best_serving_beam_ID_per_ue]
+            self.best_server_coupling_gain_per_ue_dB: np.ndarray = coupling_gain_ue_to_cell_dB[
+                ue_IDs, self.best_serving_beam_ID_per_ue
+            ]
     
         # RSRP and noise values for the best server
-        self.best_server_rsrp_per_ue_dBm: np.ndarray = rsrp_ue_to_cell_dBm[ue_IDs, self.best_serving_beam_ID_per_ue]
-        self.best_server_re_noise_per_ue_dBm: np.ndarray = dl_full_bandwidth_noise_dBm[ue_IDs, self.best_serving_cell_ID_per_ue]
+        self.best_server_rsrp_per_ue_dBm: np.ndarray = rsrp_ue_to_cell_dBm[
+            ue_IDs, self.best_serving_beam_ID_per_ue
+        ]
+        self.best_server_re_noise_per_ue_dBm: np.ndarray = dl_full_bandwidth_noise_dBm[
+            ue_IDs, self.best_serving_cell_ID_per_ue
+        ]
     
         # 7. Calculate cell/beam activity
         if self.beam_conf_obj is None:  # LTE: No beams, only cells
-            self.beam_activity_per_ue, self.ues_per_beam = \
-                calculate_cell_beam_activity.cell_activity(number_of_cells, self.best_serving_cell_ID_per_ue)
+            self.beam_activity_per_ue, self.ues_per_beam = calculate_cell_beam_activity.cell_activity(
+                number_of_cells, self.best_serving_cell_ID_per_ue
+            )
             self.ues_per_cell = self.ues_per_beam
             
         elif self.beam_conf_obj.beam_type == "SSB":  # NR: SSB beams
-            self.beam_activity_per_ue, self.ues_per_beam = \
-                calculate_cell_beam_activity.SSB_beam_activity(self.beam_conf_obj, self.best_serving_beam_ID_per_ue)
+            self.beam_activity_per_ue, self.ues_per_beam = calculate_cell_beam_activity.SSB_beam_activity(
+                self.beam_conf_obj, self.best_serving_beam_ID_per_ue
+            )
             # Map UE activity to cells
             self.ues_per_cell = np.bincount(beam_to_node_mapping, weights=self.ues_per_beam).astype(int)
     
@@ -233,10 +245,16 @@ class Cell_Selection(Saveable):
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot_heatmaps == 1 and snapshot_control.num_snapshots == 0:
             x_size: int = int(
-                np.ceil(self.ue_playground_deployment_obj.scenario_x_side_length_m / self.ue_playground_deployment_obj.grid_resol_m)
+                np.ceil(
+                    self.ue_playground_deployment_obj.scenario_x_side_length_m
+                    / self.ue_playground_deployment_obj.grid_resol_m
+                )
             )
             y_size: int = int(
-                np.ceil(self.ue_playground_deployment_obj.scenario_y_side_length_m / self.ue_playground_deployment_obj.grid_resol_m)
+                np.ceil(
+                    self.ue_playground_deployment_obj.scenario_y_side_length_m
+                    / self.ue_playground_deployment_obj.grid_resol_m
+                )
             )
             ue_grid_position: np.ndarray = self.ue_deployment_obj.ue_grid_position
     
@@ -271,7 +289,6 @@ class Cell_Selection(Saveable):
                 {"number_of_cells": number_of_cells},
             )
     
-
     def _save_heatmap(
         self,
         file_suffix: str,
@@ -294,7 +311,6 @@ class Cell_Selection(Saveable):
             grid_resol_m: Resolution of the grid in meters.
             metadata: Additional metadata to include in the file.
         """
-        
         file_name = results_file(self.simulation_config_obj.project_name, f"to_plot_{file_suffix}")
         np.savez(
             file_name,
@@ -306,8 +322,118 @@ class Cell_Selection(Saveable):
             **metadata,
         )
 
-class Cell_Selection_SSB(Cell_Selection):
-    pass
 
 class Cell_Selection_CRS(Cell_Selection):
-    pass
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return [
+            # ---- CRS (Cell-specific Reference Signal) ----
+            "best_serving_cell_ID_per_ue",
+            "best_server_distance_3d_per_ue_m",
+            "best_server_coupling_gain_per_ue_dB",
+            "best_server_re_noise_per_ue_dBm",
+            "best_server_rsrp_per_ue_dBm",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue"
+            ]
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            # ---- CRS (Cell-specific Reference Signal) ----
+            "best_serving_cell_ID_per_ue": "ue_kpi",
+            "best_server_distance_3d_per_ue_m": "ue_kpi",
+            "best_server_coupling_gain_per_ue_dB": "ue_kpi",
+            "best_server_re_noise_per_ue_dBm": "ue_kpi",
+            "best_server_rsrp_per_ue_dBm": "ue_kpi",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam": "crsBeam_kpi",
+            # ---- Cell and beam activity ----
+            # 2-D UE×cell activity mask: one row per UE, cells spread into columns.
+            "beam_activity_per_ue": "ue_kpi"
+        }
+
+    def expose_variable_column_prefixes(self) -> Dict[str, str]:
+        """Label the expanded sub-columns of the 2-D activity mask (cells spread into columns)."""
+        return {
+            # -> '<Class>.beam_activity_per_ue.cell0', '.cell1', ...
+            "beam_activity_per_ue": "cell"
+        }
+
+    def expose_variable_descriptions(self) -> Dict[str, str]:
+        """Human-readable description for each exposed variable (shown in the Saveable catalog)."""
+        return {
+            # ---- CRS (Cell-specific Reference Signal) ----
+            "best_serving_cell_ID_per_ue": "ID of the serving cell for each UE, where the selection is based on measurements over the common reference signal (CRS). Used for LTE cells that do not employ massive MIMO arrays. In LTE or NR cells with massive MIMO arrays, this represents an association considering only the antenna gain from a single element, not from the full array.",
+            "best_server_distance_3d_per_ue_m": "3D distance between each UE and its serving cell based on CRS-based selection.",
+            "best_server_coupling_gain_per_ue_dB": "Coupling gain between the UE and its serving cell based on CRS-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain.",
+            "best_server_re_noise_per_ue_dBm": "Received noise power per resource element at the UE, typically used in SNR or SINR computations for CRS.",
+            "best_server_rsrp_per_ue_dBm": "Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving CRS. Reflects the average received power of resource elements carrying such CRS.",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam": "Number of UEs associated with each cell based on CRS-based selection.",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue": "Binary mask indicating the cells that were actively transmitting from the UE's perspective at the time it was transmitting or receiving data."
+        }
+
+
+class Cell_Selection_SSB(Cell_Selection):
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return [
+            # ---- SSB (Synchronization Signal Block) ----
+            "best_serving_cell_ID_per_ue",
+            "best_server_distance_3d_per_ue_m",
+            "best_server_coupling_gain_per_ue_dB",
+            "best_server_re_noise_per_ue_dBm",
+            "best_server_rsrp_per_ue_dBm",
+            "best_serving_beam_ID_per_ue",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam",
+            "ues_per_cell",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue"
+            ]
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            # ---- SSB (Synchronization Signal Block) ----
+            "best_serving_cell_ID_per_ue": "ue_kpi",
+            "best_server_distance_3d_per_ue_m": "ue_kpi",
+            "best_server_coupling_gain_per_ue_dB": "ue_kpi",
+            "best_server_re_noise_per_ue_dBm": "ue_kpi",
+            "best_server_rsrp_per_ue_dBm": "ue_kpi",
+            "best_serving_beam_ID_per_ue": "ue_kpi",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam": "ssbBeam_kpi",
+            "ues_per_cell": "cell_kpi",
+            # ---- Cell and beam activity ----
+            # 2-D UE×SSB-beam activity mask: one row per UE, beams spread into columns.
+            "beam_activity_per_ue": "ue_kpi"
+        }
+
+    def expose_variable_column_prefixes(self) -> Dict[str, str]:
+        """Label the expanded sub-columns of the 2-D activity mask (beams spread into columns)."""
+        return {
+            # -> '<Class>.beam_activity_per_ue.beam0', '.beam1', ...
+            "beam_activity_per_ue": "beam"
+        }
+
+    def expose_variable_descriptions(self) -> Dict[str, str]:
+        """Human-readable description for each exposed variable (shown in the Saveable catalog)."""
+        return {
+            # ---- SSB (Synchronization Signal Block) ----
+            "best_serving_cell_ID_per_ue": "ID of the serving cell for each UE, where the selection is based on measurements over the synchronization signal block (SSB). Used for LTE and NR cells that employ massive MIMO arrays. In LTE cells, there is only one SSB, which represents the CRS.",
+            "best_server_distance_3d_per_ue_m": "3D distance between each UE and its serving cell based on SSB-based selection.",
+            "best_server_coupling_gain_per_ue_dB": "Coupling gain between the UE and its serving cell based on SSB-based selection. Represents the link budget gain, accounting for path loss, shadowing, outdoor-to-indoor penetration loss, and antenna/array gain, considering SSB precoding.",
+            "best_server_re_noise_per_ue_dBm": "Received noise power per resource element at the UE, typically used in SNR or SINR computations for SSB.",
+            "best_server_rsrp_per_ue_dBm": "Reference Signal Received Power (RSRP) measured by each UE from its serving cell based on its serving SSB. Reflects the average received power of resource elements carrying such SSB.",
+            "best_serving_beam_ID_per_ue": "ID of the serving SSB beam (coverage) for each UE, where the selection is based on SSB measurements.",
+            # ---- UE counts per cell and beam ----
+            "ues_per_beam": "Number of UEs associated with each SSB beam based on the corresponding SSB-based selection.",
+            "ues_per_cell": "Number of UEs associated with each cell based on SSB-based selection.",
+            # ---- Cell and beam activity ----
+            "beam_activity_per_ue": "Binary mask indicating the SSB beams that were actively transmitting from the UE's perspective at the time it performed the SSB measurement. Recall that SSB beams are swept sequentially over time."
+        }

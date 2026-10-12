@@ -1,15 +1,3 @@
-"""
-Created on Fri Nov 29 10:05:00 2024
-
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
-"""
-
 import os.path
 
 from giulia import PROJ_DIR

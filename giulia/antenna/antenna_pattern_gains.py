@@ -38,6 +38,7 @@ class Antenna_Pattern_Gain(Saveable):
 
         ##### Input storage 
         ######################## 
+        
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj  
@@ -45,12 +46,19 @@ class Antenna_Pattern_Gain(Saveable):
             
         ##### Outputs 
         ########################   
+        
+        # Placeholder to store antenna pattern gain results
+        
         self.antenna_pattern_gain_b_to_a_dB = []
         self.df_antenna_pattern_gain_b_to_a_dB = []
 
-    def variables_list(self) -> List[str]:
+
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["antenna_pattern_gain_b_to_a_dB"]
+        return []
 
        
     def process(self, rescheduling_us=-1):
@@ -106,6 +114,7 @@ class Antenna_Pattern_Gain(Saveable):
                 # Mask to select cells using the current antenna model
                 mask = antenna_pattern_model == self.antenna_pattern_models
                 
+
                 # Compute antenna gain based on the selected model
                 if antenna_pattern_model == "omnidirectional":
                     # Extract relevant parameters for selected cells
@@ -115,6 +124,7 @@ class Antenna_Pattern_Gain(Saveable):
                     self.antenna_pattern_gain_b_to_a_dB[:, mask] = np.ones(np.size(mask, 0), dtype=np.single) * A_max_dBi
                     
                     
+
                 elif antenna_pattern_model in ["3GPPTR36_814_UMa", "3GPPTR38_901"]:
                     # Extract relevant parameters for selected cells
                     A_max_dBi = self.A_max_dBi[mask]
@@ -144,9 +154,7 @@ class Antenna_Pattern_Gain(Saveable):
                     func_rotation = self.distance_angles_ue_to_cell_obj.calculate_azimuth_zenith_deg_from_GCS_to_LCS_3GPPComp_perCell
                     
                     # Compute angles in LCS per cell
-                    for i, (α_mec_deg, β_mec_deg, γ_mec_deg, azimuths_b_deg, zeniths_b_deg) in \
-                        enumerate(zip(α_mec_deg_arr, β_mec_deg_arr, γ_mec_deg_arr, azimuths_b_to_a_deg.T, zeniths_b_to_a_deg.T)):
-                            
+                    for i, (α_mec_deg, β_mec_deg, γ_mec_deg, azimuths_b_deg, zeniths_b_deg) in enumerate(zip(α_mec_deg_arr, β_mec_deg_arr, γ_mec_deg_arr, azimuths_b_to_a_deg.T, zeniths_b_to_a_deg.T)):
                             azimuths_b_to_a_deg_lcs[:, i], zeniths_b_to_a_deg_lcs[:, i] = func_rotation(α_mec_deg, β_mec_deg, γ_mec_deg, 
                                                                                                         azimuths_b_deg, zeniths_b_deg)
                     
@@ -206,6 +214,7 @@ class Antenna_Pattern_Gain(Saveable):
             return rescheduling_us
 
 
+
     def horizontal_offset_3GPP_model(self, 
                                      phi_deg: npt.NDArray[np.float32],
                                      alpha_bearing_elec_deg: npt.NDArray[np.float32],
@@ -233,7 +242,6 @@ class Antenna_Pattern_Gain(Saveable):
         
         return -1 * np.minimum(-1*(A_h_dB + A_v_dB), A_m_dB)
 
-
     def antenna_pattern_gain_3GPP_model(self, 
                                         azimuths_ue_to_cell_deg_lcs: npt.NDArray[np.float32], 
                                         zeniths_ue_to_cell_deg_lcs: npt.NDArray[np.float32], 
@@ -251,9 +259,11 @@ class Antenna_Pattern_Gain(Saveable):
         # Get vertical offset
         A_v_dB = self.vertical_offset_3GPP_model(zeniths_ue_to_cell_deg_lcs, beta_elec_downtilt_deg, theta_3dB_deg, SLA_v_dB)
         
+
         # Combining offsets in 3D antenna pattern and adding the maximum element gain              
         return A_h_dB, A_v_dB, A_max_dBi + self.combined_offset_3GPP_model(A_h_dB, A_v_dB, A_m_dB)
-
+   
+    
    
     def antenna_pattern_gain_3GPP_model_reflector(self, 
                                                   zeniths_b_to_a_deg_gcs: npt.NDArray[np.float32], 
@@ -297,7 +307,7 @@ class Antenna_Pattern_Gain(Saveable):
         # Calculate the zenith angles in the local coordinate system (LCS) using the dot product
         ## This computation is performed for all masked cells using einsum
         zeniths_b_to_a_rad_lcs = np.arccos(np.einsum('ijk,ik->jk', ρ_gcs_arr, n_gcs_arr))
-        
+    
         # Compute the argument for the antenna pattern model:
         # (pi / wavelength) * total aperture * sin(zenith angle offset)        
         arg = (np.pi / dl_carrier_wavelength_m) *2* antenna_radius_ReflectorAperture_m * np.sin(zeniths_b_to_a_rad_lcs)
@@ -314,6 +324,10 @@ class Antenna_Pattern_Gain(Saveable):
         return tools.mW_to_dBm(offset_b_to_a_lin) + A_max_dBi
 
 
+        
+   
+    
+    
     def example_antenna_pattern_gain(self):
         A_max_dBi = np.array([8], dtype=np.float32)
         alpha_elec_bearing_deg = np.array([0], dtype=np.float32)
@@ -331,4 +345,14 @@ class Antenna_Pattern_Gain(Saveable):
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.simulation_config_obj.project_name, 'to_plot_antenna_pattern')
-            np.savez(file_name,azimuth_deg=azimuth_deg,zenith_deg=zenith_deg,A_h_dB=A_h_dB,A_v_dB=A_v_dB)
+            np.savez(
+                file_name,
+                azimuth_deg=azimuth_deg,
+                zenith_deg=zenith_deg,
+                A_h_dB=A_h_dB,
+                A_v_dB=A_v_dB
+            )
+            
+        # plotting.plot_antenna_gain_4_figures(np.radians(azimuth_deg), A_h_dB, [-np.pi, np.pi], #['-pi', '-pi/2', '0', 'pi/2', 'pi', ]
+        #                                       np.radians(zenith_deg), A_v_dB, [0, np.pi], # ['0', 'pi/4', 'pi/2', '3pi/4', 'pi']
+        #                                       'Antenna pattern gain')

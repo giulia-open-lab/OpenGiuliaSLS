@@ -29,7 +29,8 @@ class PRB_Requirement:
                  beam_conf_obj,
                  best_serving_beam_per_ue_obj, 
                  SSB_sinr_ue_to_cell_obj, 
-                 best_serving_cell_ID_per_ue_based_on_SSB_obj):
+                 best_serving_cell_ID_per_ue_based_on_SSB_obj, 
+                 time_frequency_resource_obj):
         
         ##### Input storage 
         ########################
@@ -40,6 +41,7 @@ class PRB_Requirement:
         self.SSB_sinr_ue_to_cell_obj: SINR = SSB_sinr_ue_to_cell_obj
         self.CSI_RS_sinr_per_PRB_ue_to_cell_obj: None|SINR = None
         self.best_serving_cell_ID_per_ue_based_on_SSB_obj = best_serving_cell_ID_per_ue_based_on_SSB_obj
+        self.time_frequency_resource_obj = time_frequency_resource_obj
         
         ##### Outputs 
         ########################   
@@ -57,6 +59,7 @@ class PRB_Requirement:
 
 
     def _process(self, rescheduling_us=-1): 
+        
         ##### Reset Inner Variables
         ########################
         self._reset()
@@ -65,6 +68,8 @@ class PRB_Requirement:
         ########################
         
         # Network 
+        # self.dl_PRBs_available = self.network_deployment_obj.df_ep["dl_PRBs_available"].to_numpy(dtype=int) # Size number of cells 
+        
         # UE deployment
         self.traffic_generation_models = self.ue_deployment_obj.df_ep["traffic_generation_model"].to_numpy()  
         
@@ -73,16 +78,19 @@ class PRB_Requirement:
        
         ##### Process outputs
         ########################
+        
         self.dl_PRBs_required_per_ue = np.zeros(len(self.ue_deployment_obj.df_ep), dtype=int)
        
         
         ##### Start timer
         ########################  
+       
         t_start = time.perf_counter()   
 
 
         ##### Switch
         ######################## 
+       
         # Find the set of traffic generation models to process them independently
         # Define the required processing order for traffic generation models.
         # It is crucial that "rate_requirement" is processed before "strict_prb_fair_per_cell_beam":
@@ -94,24 +102,31 @@ class PRB_Requirement:
                                                key=lambda x: order_reference.index(x) if x in order_reference else len(order_reference))
         #############################################
         
-                
+        
+        # Calculate the number of DL PRBs available per beam          
+        # dl_PRBs_available_per_beam = np.repeat(self.dl_PRBs_available, self.beam_conf_obj.number_of_beams_per_node) # Size number of beams          
+        
         # Process each traffic generation model independently
         for traffic_generation_model in traffic_generation_models_set:
             
             # Identify users with the selected traffic generation model
+            
             mask = traffic_generation_model ==  self.traffic_generation_models
 
             if (traffic_generation_model == "strict_prb_fair_per_cell_beam"): 
                 # Fairly split the available PRBs per beam among UEs served by that beam
                 out = self._fair_split_dl_PRBs_required_per_ue(mask)
+                # Fairly split the available PRBs per beam among UEs served by that beam
+                out = self._fair_split_dl_PRBs_required_per_ue(mask)
                 # Write back
                 self.dl_PRBs_required_per_ue[mask] = out     
-                del out           
+                del out
                 
+  
             elif (traffic_generation_model == "rate_requirement"):
+                
                 """
-                Note: This implementation assumes that the SINR used for data transmission 
-                is the same as that measured from the SSB (Synchronization Signal Block) beams.
+                Note: This implementation assumes that the SINR used for data transmission is the same as that measured from the SSB (Synchronization Signal Block) beams.
                 """
 
                 # Extract useful information per UE from dataframes and objects
@@ -119,7 +134,7 @@ class PRB_Requirement:
                 ue_target_rate_Mbps = self.ue_deployment_obj.df_ep["ue_target_rate_Mbps"].to_numpy()[mask]
                 
                 # Get the SINR values for UEs
-                sinr_ue_to_cell_dB = self.SSB_sinr_ue_to_cell_obj.SINR_results_per_frequency_layer["all_freq"]["sinr_ue_to_cell_dB"][mask]
+                sinr_ue_to_cell_dB = self._get_ue_sinr_dB()[mask]
 
                 # Extract cell-specific parameters from the network dataframe (df_ep)
                 subcarriers_per_PRB_servingCell = self.network_deployment_obj.df_ep["subcarriers_per_PRB"].to_numpy()[serving_cell_ue_to_cell][mask]
@@ -140,8 +155,9 @@ class PRB_Requirement:
                 # Compute upper bound of DL PRBs required per UE based on fair split
                 upper_bound_dl_PRBs_required_per_ue = self._fair_split_dl_PRBs_required_per_ue(mask)
 
+
                 # Cap the required PRBs per UE to the upper bound
-                self.dl_PRBs_required_per_ue[mask] = np.clip(dl_PRBs_required_per_ue_masked, 0, upper_bound_dl_PRBs_required_per_ue).astype(int)
+                self.dl_PRBs_required_per_ue[mask] = np.clip(dl_PRBs_required_per_ue_masked, 1, upper_bound_dl_PRBs_required_per_ue).astype(int)
 
                 del mask
                 
@@ -153,27 +169,30 @@ class PRB_Requirement:
                                                        ).astype(dtype=int)
                     
                 # Check if the number of active PRBs per cell does not exceed the available PRBs
-                cell_prb_availability_flag = dl_PRBs_demanded_per_cell <= self.network_deployment_obj.df_ep["dl_PRBs_available"].to_numpy()
+                # cell_prb_availability_flag = dl_PRBs_demanded_per_cell <= self.network_deployment_obj.df_ep["dl_PRBs_available"].to_numpy()
                 
                 
-                # If any cell has active PRBs exceeding the available PRBs, re-assign resources
-                if not all(cell_prb_availability_flag):
-                    # Do reassignment for each cell that meet the condition
-                    for bs_idx in np.where(cell_prb_availability_flag==False)[0]:
-                        self.dl_PRBs_required_per_ue [serving_cell_ue_to_cell == bs_idx] \
-                            = self.re_allocate_resources_fullfillRequest(self.dl_PRBs_required_per_ue [serving_cell_ue_to_cell==bs_idx], 
-                                                               self.network_deployment_obj.df_ep.iloc[bs_idx]["dl_PRBs_available"])
+                
+                # # If any cell has active PRBs exceeding the available PRBs, re-assign resources
+                # # Note that: If there are users that can not be served (not enuoght resources in the cell),
+                # # the function will put a required_prb = 0 for that users.
+                # if not all(cell_prb_availability_flag):
+                #     # Do reassignemtn for each cell that meet the condition
+                #     for bs_idx in np.where(cell_prb_availability_flag==False)[0]:
+                #         self.dl_PRBs_required_per_ue [serving_cell_ue_to_cell == bs_idx] \
+                #             = self.re_allocate_resources_fullfillRequest(self.dl_PRBs_required_per_ue [serving_cell_ue_to_cell==bs_idx], 
+                #                                                self.network_deployment_obj.df_ep.iloc[bs_idx]["dl_PRBs_available"])
                             
-                    # Update and total number of active PRBs per cell
-                    dl_PRBs_demanded_per_cell = np.bincount(serving_cell_ue_to_cell, 
-                                                            weights=self.dl_PRBs_required_per_ue, 
-                                                            minlength=self.network_deployment_obj.df_ep.values.shape[0]
-                                                           ).astype(dtype=int)
-                    # Updated cell_prb_availability_flag
-                    cell_prb_availability_flag = dl_PRBs_demanded_per_cell <= self.network_deployment_obj.df_ep["dl_PRBs_available"].to_numpy()
+                #     # Update and total number of active PRBs per cell
+                #     dl_PRBs_demanded_per_cell = np.bincount(serving_cell_ue_to_cell, 
+                #                                             weights=self.dl_PRBs_required_per_ue, 
+                #                                             minlength=self.network_deployment_obj.df_ep.values.shape[0]
+                #                                            ).astype(dtype=int)
+                #     # Updated cell_prb_availability_flag
+                #     cell_prb_availability_flag = dl_PRBs_demanded_per_cell <= self.network_deployment_obj.df_ep["dl_PRBs_available"].to_numpy()
                     
-                assert all(cell_prb_availability_flag), \
-                    f"Error! Re-allocation of resources in {self.__class__} failed. Requested resources exceed available."
+                # assert all(cell_prb_availability_flag), \
+                #     f"Error! Re-allocation of resources in {self.__class__} failed. Requested resources exceed available."
                     
                 # Store the computed active PRBs per cell in the traffic generator object
                 self.dl_PRBs_active_per_cell = dl_PRBs_demanded_per_cell
@@ -181,8 +200,10 @@ class PRB_Requirement:
                 
             else: raise ValueError(f"Error, traffic_generators.traffic_generation_model not correctly specified. \
                                    Value '{traffic_generation_model}' not admitted")
+                
 
 
+    
         # Update final dl_PRBs_active_per_cell
         self.dl_PRBs_active_per_cell = np.bincount(serving_cell_ue_to_cell, 
                                                    weights=self.dl_PRBs_required_per_ue, 
@@ -200,6 +221,7 @@ class PRB_Requirement:
         return rescheduling_us          
 
 
+
     # =============================================================================
     # Fair Split Functions
     # =============================================================================
@@ -212,8 +234,14 @@ class PRB_Requirement:
         Returns:
             np.array([int]): Fairly split DL PRBs required per UE
         """
-        # PRBs per cell (in-place: subtract & clip)
-        prbs_av_cell = np.asarray(self.network_deployment_obj.df_ep["dl_PRBs_available"].values,dtype=np.int64)
+        # PRBs per cell (in-place: subtract & clip).
+        # Use np.array (copy=True) so the buffer is writable regardless of
+        # numpy/pandas version — under numpy>=2 a matching-dtype np.asarray of
+        # a pandas .values array returns a read-only view, breaking out= writes.
+        prbs_av_cell = np.array(
+            self.network_deployment_obj.df_ep["dl_PRBs_available"].values,
+            dtype=np.int64
+        )
         np.subtract(prbs_av_cell, self.dl_PRBs_active_per_cell, out=prbs_av_cell, casting="unsafe")
         np.clip(prbs_av_cell, 0, None, out=prbs_av_cell)
     
@@ -267,7 +295,8 @@ class PRB_Requirement:
     # =============================================================================
     # Resource Re-Allocation Functions
     # =============================================================================
-    def re_allocate_resources_fullfillRequest(self, requests: npt.NDArray[np.int_], total_resources: int):
+    def re_allocate_resources_fullfillRequest(self, 
+                                              requests: npt.NDArray[np.int_], total_resources: int):
         """
         Maximizes the number of fully satisfied requests under a total resource constraint
         using a Python-based approach
@@ -314,7 +343,10 @@ class PRB_Requirement:
             fractions = [(idx, r / remaining_sum * remaining_resources) for idx, r in unfulfilled]
             # Separate integer and fractional parts
             integers = {idx: int(f) for idx, f in fractions}
-            decimals = sorted([(f - int(f), idx) for idx, f in fractions],reverse=True)
+            decimals = sorted(
+                [(f - int(f), idx) for idx, f in fractions],
+                reverse=True
+            )
         
             # Assign integer parts
             for idx in integers:
@@ -327,3 +359,38 @@ class PRB_Requirement:
                 
         return allocations    
     
+    # =============================================================================
+    # Get SINR functions
+    # =============================================================================
+    def _get_ue_sinr_dB(self):
+        """
+        Get the SINR values per UE-to-cell link in dB, combining SSB and CSI-RS measurements.
+        If CSI-RS SINR data is unavailable, SSB SINR values are used.
+        """
+        # check  if self.CSI_RS_sinr_per_PRB_ue_to_cell_obj.SINR_results_per_frequency_layer is an empy dictionary
+        assert self.CSI_RS_sinr_per_PRB_ue_to_cell_obj is not None, f"Error! in {self.__module__} self.CSI_RS_sinr_per_PRB_ue_to_cell_obj is None"
+        sinr_ue_to_cell_dB_SSB = output_module._get_combined_sinr_matrix(self.SSB_sinr_ue_to_cell_obj, 
+                                                                         self.time_frequency_resource_obj,
+                                                                         "sinr_ue_to_cell_dB", self.network_deployment_obj.simulation_config_obj.preset)
+        if isinstance(self.CSI_RS_sinr_per_PRB_ue_to_cell_obj.SINR_results_per_frequency_layer, dict) and not self.CSI_RS_sinr_per_PRB_ue_to_cell_obj.SINR_results_per_frequency_layer:
+            # No CSI-RS SINR data available, use SSB SINR values
+            sinr_ue_to_cell_dB = sinr_ue_to_cell_dB_SSB.copy()
+
+        else:
+            # CSI-RS SINR data available, use it
+            sinr_ue_to_cell_dB_CSI = output_module._get_combined_sinr_matrix(self.CSI_RS_sinr_per_PRB_ue_to_cell_obj,
+                                                                             self.time_frequency_resource_obj,
+                                                                             "effective_sinr_ue_to_cell_dB", self.network_deployment_obj.simulation_config_obj.preset)
+            # Get best serving cell IDs per UE from which is computed the known CSI-RS SINR
+            best_serving_cell_ID_per_ue_prev = output_module._get_combined_sinr_matrix(self.CSI_RS_sinr_per_PRB_ue_to_cell_obj, self.time_frequency_resource_obj,
+                                                                                       "best_serving_cell_ID_per_ue", self.network_deployment_obj.simulation_config_obj.preset).astype(int)
+            
+            # Create a mask for UEs whose serving cell ID has changed compared to previous step
+            mask = best_serving_cell_ID_per_ue_prev == self.best_serving_cell_ID_per_ue_based_on_SSB_obj.best_serving_cell_ID_per_ue
+            mask = mask & (sinr_ue_to_cell_dB_CSI!=-np.inf)
+            
+            # Combine SINR values based on the mask
+            sinr_ue_to_cell_dB = sinr_ue_to_cell_dB_SSB.copy()
+            sinr_ue_to_cell_dB[mask] = sinr_ue_to_cell_dB_CSI[mask]
+
+        return sinr_ue_to_cell_dB

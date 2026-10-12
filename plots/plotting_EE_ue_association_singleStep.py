@@ -9,8 +9,8 @@ d.lopez@iteam.upv.es
 @author: Matteo Bernabe
 matteo.bernabe@ieee.org
 matteo.bernabe@iteam.upv.es
-"""
 
+"""
 import os
 import sys
 # Configure Giulia into path
@@ -79,7 +79,7 @@ def plot_netPower_consumption_overTime(name_fig, dict_giuliaSls_results, ue_dens
         # Take data
         network_power_consumption_kW = dict_giuliaSls_results[name_key]["network_power_consumption_kW"]
         
-        # Compute mean and confidence interval
+        # Compute 
         mean_value, ci_value = calculate_mean_and_ci(network_power_consumption_kW.squeeze())
         
         time_steps = np.arange(1, 1 + mean_value.shape[0])
@@ -100,6 +100,7 @@ def plot_netPower_consumption_overTime(name_fig, dict_giuliaSls_results, ue_dens
             color=color_dict_var[var_perc_value]
         )
 
+    # Improve plot aesthetics
     plt.title("Network Power Consumption Over Time", fontsize=14)
     plt.xlabel("Time Step", fontsize=12)
     plt.ylabel("Power Consumption (kW)", fontsize=12)
@@ -110,6 +111,8 @@ def plot_netPower_consumption_overTime(name_fig, dict_giuliaSls_results, ue_dens
     plt.show()
         
     
+    
+    
 def plot_netPower_savingPercentage(name_fig, dict_giuliaSls_results, UE_density_list, var_param_perc_list, enable_save=True):
     for var_perc_value in var_param_perc_list:
         mean_values = []
@@ -119,11 +122,15 @@ def plot_netPower_savingPercentage(name_fig, dict_giuliaSls_results, UE_density_
             name_key = f"ueDens_{ue_density_value}_varPerc_{var_perc_value}"
             
             network_power_consumption_kW = dict_giuliaSls_results[name_key]["network_power_consumption_kW"]
-            diff_power_cons_perc = 100 * ((network_power_consumption_kW[:, -1] - network_power_consumption_kW[:, 0]) / network_power_consumption_kW[:, 0])
+            diff_power_cons_perc = 100 * (
+                (network_power_consumption_kW[:, -1] - network_power_consumption_kW[:, 0])
+                / network_power_consumption_kW[:, 0]
+            )
             mean_value, ci_value = calculate_mean_and_ci(diff_power_cons_perc)
             mean_values.append(mean_value)
             ci_values.append(ci_value)
         
+        # Una singola chiamata per ogni var_perc_value
         plt.errorbar(
             UE_density_list,
             mean_values,
@@ -135,6 +142,7 @@ def plot_netPower_savingPercentage(name_fig, dict_giuliaSls_results, UE_density_
             ls=ls_dict_var[var_perc_value]
         )
 
+    # Improve plot aesthetics
     plt.xticks(UE_density_list, UE_density_list)
     plt.title("Network Power Consumption Percentage Saving", fontsize=14)
     plt.xlabel("Number of UEs", fontsize=12)
@@ -144,6 +152,7 @@ def plot_netPower_savingPercentage(name_fig, dict_giuliaSls_results, UE_density_
     plt.tight_layout()
     plt.savefig(f"./figures/{name_fig}.png", format='png')
     plt.show()
+    
     
     
 def plot_netThp_diffPercentage(name_fig, dict_giuliaSls_results, UE_density_list, var_param_perc_list, enable_save=True):
@@ -158,11 +167,15 @@ def plot_netThp_diffPercentage(name_fig, dict_giuliaSls_results, UE_density_list
             sum_cell_network_throughput_Mbps = dict_giuliaSls_results[name_key]["cell_throughput_Mbps"].sum(2)
             
             # Compute
-            diff_power_cons_perc = 100 * ((sum_cell_network_throughput_Mbps[:, -1] - sum_cell_network_throughput_Mbps[:, 0])/ sum_cell_network_throughput_Mbps[:, 0])
+            diff_power_cons_perc = 100 * (
+                (sum_cell_network_throughput_Mbps[:, -1] - sum_cell_network_throughput_Mbps[:, 0])
+                / sum_cell_network_throughput_Mbps[:, 0]
+            )
             mean_value, ci_value = calculate_mean_and_ci(diff_power_cons_perc)
             mean_values.append(mean_value)
             ci_values.append(ci_value)
         
+        # Plot one curve per var_perc_value
         plt.errorbar(
             UE_density_list,
             mean_values,
@@ -174,6 +187,7 @@ def plot_netThp_diffPercentage(name_fig, dict_giuliaSls_results, UE_density_list
             ls=ls_dict_var[var_perc_value]
         )
 
+    # Improve plot aesthetics
     plt.xticks(UE_density_list, UE_density_list)
     plt.title("Network Throughput Difference Percentage", fontsize=14)
     plt.xlabel("Number of UEs", fontsize=12)
@@ -184,6 +198,7 @@ def plot_netThp_diffPercentage(name_fig, dict_giuliaSls_results, UE_density_list
     plt.ylim(-0.1, 0.1)
     plt.savefig(f"./figures/{name_fig}.png", format='png')
     plt.show()
+
 
 
 def plot_number_of_offloaded_users(name_fig, dict_opt_results, UE_density_list, var_param_perc_list, num_episods, enable_save=True):
@@ -204,6 +219,7 @@ def plot_number_of_offloaded_users(name_fig, dict_opt_results, UE_density_list, 
             mean_values.append(mean_value)
             ci_values.append(ci_value)
         
+        # Plot a single line with error bars
         plt.errorbar(
             UE_density_list,
             mean_values,
@@ -215,6 +231,7 @@ def plot_number_of_offloaded_users(name_fig, dict_opt_results, UE_density_list, 
             ls=ls_dict_var[var_perc_value]
         )
 
+    # Plot aesthetics
     plt.xticks(UE_density_list, UE_density_list)
     plt.title("Number of Offloaded Users", fontsize=14)
     plt.xlabel("Number of UEs", fontsize=12)
@@ -224,7 +241,8 @@ def plot_number_of_offloaded_users(name_fig, dict_opt_results, UE_density_list, 
     plt.tight_layout()
     plt.savefig(f"./figures/{name_fig}.png", format='png')
     plt.show()
-               
+        
+        
     
 def plot_layout_with_ue_locations_with_association_and_highlight_ues(name_fig, 
                                                                      scenario_model, 
@@ -234,7 +252,10 @@ def plot_layout_with_ue_locations_with_association_and_highlight_ues(name_fig,
                                                                      episode=1, 
                                                                      enable_save=True):
     # Construct the folder path where simulation results are stored
-    folder_path = (f"../outputs/results/Opt_EE_UserAssociation_4G/",f"{scenario_model}_{ue_distribution}/",f"UEdensity_{ue_density_value}_varParam_{var_perc_value}/")
+    folder_path = (f"../outputs/results/Opt_EE_UserAssociation_4G/"
+        f"{scenario_model}_{ue_distribution}/"
+        f"UEdensity_{ue_density_value}_varParam_{var_perc_value}/"
+    )
     
     # Load UE deployment data
     ue_deployment_path = folder_path + "to_plot_ue_deployment.npz"
@@ -247,7 +268,9 @@ def plot_layout_with_ue_locations_with_association_and_highlight_ues(name_fig,
     hot_spot_position_m = ue_deployment["hotspot_position_m"]
     
     # Retrieve IDs of highlighted UEs for the given episode
-    highlighted_ue_ids = dict_opt_results[f"ueDens_{ue_density_value}_varPerc_{var_perc_value}_ep_{episode}"]["user_id"]
+    highlighted_ue_ids = dict_opt_results[
+        f"ueDens_{ue_density_value}_varPerc_{var_perc_value}_ep_{episode}"
+    ]["user_id"]
     
     # Load best-serving cell data (SSB-based)
     serving_cell_path = folder_path + "to_plot_best_serving_cell_heat_map_based_on_SSB.npz"
@@ -354,13 +377,15 @@ if __name__ == "__main__":
     """
     Loading the data results
     """
-    # Load data
-    dict_opt_results, dict_giuliaSls_results = load_results(UE_density_list, var_param_perc_list, num_episods)
+    # LOAD
+    dict_opt_results, dict_giuliaSls_results =\
+        load_results(UE_density_list, var_param_perc_list, num_episods)
 
     
     # Check for plot save folder
     os.makedirs("figures", exist_ok=True) 
 
+    # Plot Figure 1
     """
     2D network layout with UE offloaded by the proposed algorithm.
     """
@@ -374,6 +399,7 @@ if __name__ == "__main__":
                                                                      enable_save=enable_save)
     del name_fig
     
+    # Plot Figure 4 
     """
     Network power consumption (mean and 95% confidence interval) achieved 
     by the proposed re-association algorithm considering an average of five UE per cell
@@ -384,6 +410,7 @@ if __name__ == "__main__":
                                        enable_save=enable_save)
     del name_fig      
     
+    # Plot Figure 5
     """
     Network power saving percentage (mean and 95% confidence interval) achieved by 
     the proposed re-association algorithm for different average numbers of ue per cell.
@@ -393,6 +420,7 @@ if __name__ == "__main__":
                                    var_param_perc_list, enable_save=enable_save)
     del name_fig    
     
+    # Plot Figure 6
     """
     Network throughput percentage difference (mean and 95% confidence interval) achieved by 
     the proposed re-association algorithm for different average numbers of UE per cell.
@@ -403,6 +431,7 @@ if __name__ == "__main__":
     
     del name_fig    
     
+    # Plot Figure 7
     """
     Number of offloaded UE (mean and 95% confidence interval) resulting from the proposed 
     re-association algorithm for different average numbers of UE per cell.

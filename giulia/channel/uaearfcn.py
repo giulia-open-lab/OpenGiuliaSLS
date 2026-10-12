@@ -492,3 +492,18 @@ def earfcn2freq(band, dl_earfcn=None, ul_earfcn=None):
     elif downlink_freq is None and uplink_freq is not None:
         downlink_freq = downlink_freq + duplex_spacing
     return (downlink_freq, uplink_freq)
+
+# if __name__ == "__main__":
+#     import argparse
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("nettype", type=int,  help="select network type: 1 for 3G, and 2 for 4G")
+#     parser.add_argument("band", type=int, help="Band index")
+#     parser.add_argument("downlink", type=int, help="Downlink U/E-ARFCN")
+#     parser.add_argument("--uplink", type=int, help="Uplink U/E-ARFCN")
+#     args = parser.parse_args()
+#     if args.nettype == 1:
+#         ret = uarfcn2freq(args.band, args.downlink, args.uplink)
+#     elif args.nettype == 2:
+#         ret = earfcn2freq(args.band, args.downlink, args.uplink)
+#     print ("[+] Selected Downlink ARFCN %i (band %i)" % (args.downlink, args.band))
+#     print ("Downlink: %f MHz and Uplink: %f MHz" % (ret[0],ret[1]))

@@ -4,7 +4,12 @@ This page lists the models exposed through the `args` block of `config.yml` and 
 
 ## Scenario / propagation models
 
-The active scenario is selected with `args.scenario_model`. Each value maps to a per-scenario builder in `giulia/bs/bs_deployments.py` (`construct_scenario_<scenario_model>`) and to a propagation/channel branch under `giulia/channel/`.
+The active scenario is selected with `args.scenario_model`. Each value is dispatched by the `if / elif` chain in `Network.process()` (`giulia/bs/bs_deployments.py`) to a per-scenario `construct_scenario_...` builder, and to a propagation/channel branch under `giulia/channel/`.
+
+> The builder method name does **not** always equal `construct_scenario_<scenario_model>` — about a
+> third of the branches deviate (`_lsc` becomes `_large_scale_calibration`, `_multilayer` is dropped,
+> and so on). See the deviation table in
+> [Running Giulia § Customizing base station parameters](running-giulia.md#customizing-base-station-parameters-per-scenario).
 
 ### ITU-R M.2135 (urban macro / micro)
 
@@ -53,6 +58,16 @@ UMi configurations:
 - `3GPPTR38_811_Dense_Urban_HAPS_ULA`
 - `3GPPTR38_811_Dense_Urban_HAPS_UPA`
 - `3GPPTR38_811_Dense_Urban_HAPS_Reflector`
+- `3GPPTR38_811_Dense_Urban_HAPS_TriReflector`
+- `3GPPTR38_811_Dense_Urban_SingleHAPS_Reflector`
+- `3GPPTR38_811_Dense_Urban_SingleHAPS_TriReflector`
+
+Single-HAPS variants combined with a terrestrial 4G/5G layer:
+
+- `3GPPTR38_811_Dense_Urban_HAPS_901_4G5G`
+- `3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G`
+- `3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G`
+- `3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G`
 
 ### Multi-RAT and layered (4G / 5G / 6G)
 
@@ -69,6 +84,7 @@ ITU-R-based multilayer scenarios:
 - `3GPPTR38_901_6G`
 - `3GPPTR38_901_4G5G_multilayer`
 - `3GPPTR38_901_4G_5G_multilayer`
+- `3GPPTR38_901_4G_5G2_multilayer`
 - `3GPPTR38_901_4G_5G6G_multilayer`
 - `3GPPTR38_901_4G_5G_6G_multilayer`
 - `3GPPTR38_901_4G5G_cell_reselection`
@@ -127,15 +143,19 @@ For the full step-by-step procedure used to assemble the channel between a UE an
 
 Giulia builds on a fixed set of numerical and scientific libraries pinned by the installer (see [Environment setup](environment-setup.md)):
 
-- **NVIDIA Sionna 1.1.0** — used for the optional ray-traced and TR 38.901 OFDM channels.
-- **TensorFlow 2.17.0** — backend for Sionna and for some link-level utilities.
-- **PyTorch 2.7.1** — used in the channel pipeline (slow channel × fast fading composition, GPU tensor operations).
-- **Simulus 1.2.1** — the discrete-event simulation kernel that backs `giulia/event_driven/`.
-- **NumPy / SciPy / Pandas / scikit-learn / matplotlib / seaborn** — general numerical, dataframe, and plotting stack.
-- **Shapely 2.1.1 / GeoPandas 1.1.1** — geometric primitives for the playground layout.
-- **Trimesh 4.6.13 / Mitsuba 3.6.2** — 3D mesh handling and rendering, used by the data-driven and ray-traced scenarios.
-- **Astropy 7.1.0** — units and astronomical helpers used by the NTN channel branches.
+- **NVIDIA Sionna 2.0.1** — used for the optional ray-traced and TR 38.901 OFDM channels. Sionna 2 is
+  **PyTorch-based**, and it brings in PyTorch together with its bundled CUDA 13.0 runtime.
+- **PyTorch** — used throughout the channel pipeline (slow channel × fast fading composition, GPU
+  tensor operations). Installed as a dependency of Sionna, never pinned separately; the exact build
+  is recorded in `environment.yml`.
+- **NumPy 2.4.6 / SciPy 1.17.1 / Pandas 3.0.3 / scikit-learn 1.9.0 / matplotlib 3.11.0 / seaborn 0.13.2** — general numerical, dataframe, and plotting stack.
+- **Shapely 2.1.2 / GeoPandas 1.1.4 / PyProj 3.7.2** — geometric primitives and projections for the playground layout.
+- **Trimesh 4.12.2 / Mitsuba 3.8.0** — 3D mesh handling and rendering, used by the data-driven and ray-traced scenarios.
+- **Astropy 8.0.1** — units and astronomical helpers used by the NTN channel branches.
 - **itur 0.4.0** — ITU-R P-series propagation (gaseous, rain, cloud, scintillation) used by the NTN path-loss model.
-- **PyArrow 20.0.0** — Parquet I/O for the output module.
-- **tqdm 4.67.1** — progress bars.
-- **nvidia-ml-py 12.575.51** — GPU monitoring used by `scripts/monitor_GPU.py`.
+- **PyArrow 25.0.0** — Parquet I/O for the output module.
+- **tqdm 4.68.4** — progress bars.
+- **nvidia-ml-py 13.610.43** — GPU monitoring used by `scripts/monitor_GPU.py`.
+
+> Giulia does **not** depend on TensorFlow. Sionna 2 moved to a PyTorch backend and the TensorFlow
+> dependency was dropped with it.

@@ -1,0 +1,12 @@
+name: 3GPPTR38_901_5G_inhomogeneous_per_cell
+
+args:
+  scenario_model: 3GPPTR38_901_5G
+  ue_distribution: inhomogeneous_per_cell
+  snapshots: 2
+  regression: true
+  save_results: 1
+  plots: false
+
+run:
+  example: EV

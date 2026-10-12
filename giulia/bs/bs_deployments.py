@@ -43,9 +43,16 @@ class Network(Saveable):
                  ue_hotspot_deployment_obj):
        
        super().__init__()
-             
+      
+       ##### Plots 
+       ########################
+        
+       self.plot = 0 # Switch to control plots if any
+       
+       
        ##### Input storage
        ########################
+        
        self.simulation_config_obj = simulation_config_obj
        self.site_deployment_obj = site_deployment_obj  
        self.ue_hotspot_deployment_obj = ue_hotspot_deployment_obj
@@ -53,6 +60,7 @@ class Network(Saveable):
        
        ##### Outputs
        ########################
+       
        self.df_ep = []
                
        self.bs_antenna_height_m  = None
@@ -64,11 +72,14 @@ class Network(Saveable):
        
        self.cell_site_positions_m = []       
        
+       
        self.RAT: None|str = None
        self.carrier_frequency_GHz = None
+       self.dl_freq_cov = None
+       self.dl_freq_cap = None
        self.carrier_wavelength_m = None
        self.bandwidth_MHz = None
-       self.BS_tx_power_dBm = None
+       self.BS_tx_power_max_dBm = None
        self.BS_CRS_tx_power_per_RE_dBm = None
        
        self.antenna_config_Mg = None
@@ -92,21 +103,34 @@ class Network(Saveable):
        # For Sionna RT
        self.dataset_import_folder = data_driven_extras('loaded')
 
+       # For storing 1-1 information
+       self.map_cellName_to_cellIndex = {}
+       self.map_cellIndex_to_cellName = {}
 
-    def variables_list(self) -> List[str]:
-        """List of attributes name to be saved."""
-        return ["carrier_frequency_GHz"]
+       # For storing pairing information
+       self.pairing_CovCap_cell_matrix: np.ndarray|None = None
+       self.capCell_paired_covCell: np.ndarray|None = None
        
+
+    @property
+    def label(self) -> str: return 'cell_kpi'
+    
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
+    
 
     def process(self, rescheduling_us=-1):     
        
        ##### Start timer
        ########################        
+       
        t_start = time.perf_counter()          
        
     
        ### Swtich
        ########################
+       
        if self.site_deployment_obj.playground_model == "ITU_R_M2135_UMa" : 
            self.df_ep = self.construct_scenario_ITU_R_M2135_UMa(self.site_deployment_obj) 
            
@@ -164,13 +188,13 @@ class Network(Saveable):
            self.df_ep = self.construct_scenario_3GPPTR38_901_UMi_large_scale_calibration(self.site_deployment_obj)  
            
        elif self.site_deployment_obj.playground_model == "3GPPTR38_901_UMi_C_band_lsc" : 
-           self.df_ep = self.construct_scenario_3GPPTR38_901_UMi_C_band_large_scale_calibration(self.site_deployment_obj) 
+           self.df_ep = self.construct_scenario_3GPPTR38_901_UMi_C_band_large_scale(self.site_deployment_obj)
 
-       elif self.site_deployment_obj.playground_model == "3GPPTR38_901_UMi_fr3_lsc" : 
-           self.df_ep = self.construct_scenario_3GPPTR38_901_UMi_fr3_large_scale_calibration(self.site_deployment_obj) 
-           
-       elif self.site_deployment_obj.playground_model == "3GPPTR38_901_UPi_fr3_lsc" : 
-           self.df_ep = self.construct_scenario_3GPPTR38_901_UPi_fr3_large_scale_calibration(self.site_deployment_obj)            
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_901_UMi_fr3_lsc" :
+           self.df_ep = self.construct_scenario_3GPPTR38_901_UMi_fr3_large_scale(self.site_deployment_obj)
+
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_901_UPi_fr3_lsc" :
+           self.df_ep = self.construct_scenario_3GPPTR38_901_UPi_fr3_large_scale(self.site_deployment_obj)
             
        elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_ULA" : 
            self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_ULA(self.site_deployment_obj)     
@@ -181,7 +205,29 @@ class Network(Saveable):
        elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_Reflector" : 
            self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_Reflector(self.site_deployment_obj)
            
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_TriReflector" : 
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_TriReflector(self.site_deployment_obj)       
+       
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_SingleHAPS_Reflector" : 
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_SingleHAPS_Reflector(self.site_deployment_obj)        
+       
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_SingleHAPS_TriReflector" : 
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_SingleHAPS_TriReflector(self.site_deployment_obj)
+
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_901_4G5G" :
+           # Legacy name kept for the examples that still default to it. The scenario it used to
+           # build (a reflector HAPS over colocated 4G5G) now lives in the method below
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G(self.site_deployment_obj)
+
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G" :
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G(self.site_deployment_obj)
            
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G" :
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G(self.site_deployment_obj)
+
+       elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G" :
+           self.df_ep = self.construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G(self.site_deployment_obj)
+
        elif self.site_deployment_obj.playground_model == "3GPPTR38_811_Urban_NTN" : 
            self.df_ep = self.construct_scenario_3GPPTR38_811_Urban_NTN(self.site_deployment_obj)    
            
@@ -236,16 +282,38 @@ class Network(Saveable):
            self.df_ep = self.construct_scenario_dataset(self.site_deployment_obj)
 
 
-       else: 
-           raise ValueError(f"Error, network.site_deployment_obj.playground_model not correctly specified. Value '{self.site_deployment_obj.playground_model}' not admitted")
+       else: raise ValueError(f"Error, network.site_deployment_obj.playground_model not correctly specified. Value '{self.site_deployment_obj.playground_model}' not admitted")
        
-       ### Checks
+       # Reset Network Attributes
+       self._reset_attributes_hetNet(self.df_ep)
+       
+       
+       #### Set Map cell_name -> cell_index
+       ############################
+       self.map_cellName_to_cellIndex = dict(zip(self.df_ep['name'], self.df_ep['ID']))
+       self.map_cellIndex_to_cellName = dict(zip(self.df_ep['ID'], self.df_ep['name']))
+       
+       
+       #### Set Coverage Capacity Cell role
+       ####################################
+       self.dl_freq_cov, self.dl_freq_cap = self._compute_coverage_and_capacity_frequencies(self.df_ep)
+       self.set_dfEp_coverage_capacity_cell_roles(self.dl_freq_cov, self.dl_freq_cap)
+       
+       # Init pairing field to None in df_ep
+       self._init_to_None_cell_pairing_in_df_ep()
+
+       #### Set carrier shutdown attributes
+       self.set_dfEP_carrier_shutdown_attributes()
+       
+       
+       #### Checks
        ########################
        self.basic_checks(self.df_ep)
        
       
-       ##### Save to plot
+       #### Save to plot
        ########################   
+       
        snapshot_control = Snapshot_control.get_instance()
        if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0: 
            
@@ -258,12 +326,15 @@ class Network(Saveable):
             unique_sites_df = self.df_ep.loc[mask]
             
             # Save data
-            np.savez(file,isd_m=self.site_deployment_obj.isd_m,
-                     site_names=self.df_ep["site_name"].drop_duplicates().astype(str).to_numpy(),
-                     cell_site_positions_m=unique_sites_df[["position_x_m", "position_y_m", "position_z_m"]].astype(np.single).to_numpy()
-            )       
+            np.savez(
+                file,
+                isd_m=self.site_deployment_obj.isd_m,
+                site_names=self.df_ep["site_name"].drop_duplicates().astype(str).to_numpy(),
+                cell_site_positions_m=unique_sites_df[["position_x_m", "position_y_m", "position_z_m"]].astype(np.single).to_numpy()
+            )  
        
-       ##### End 
+        
+       #### End 
        ########################
        log_calculations_time('BS deployment', t_start)
        
@@ -273,6 +344,7 @@ class Network(Saveable):
     def basic_checks(self, df_ep):
         
         # SSB checks 
+           
         if np.any(df_ep["SSB_number_of_beams"].to_numpy() > df_ep["antenna_config_number_of_elements"].to_numpy() ):
             sys.exit("Error Number of SSB beams cannot be larger than number of antenna elements")
             
@@ -286,6 +358,7 @@ class Network(Saveable):
             sys.exit("Error Number of SSB beams in H domain cannot be larger than number of antenna elements in the H domain")
             
         # CSI-RS checks
+        
         if np.any(df_ep["CSI_RS_number_of_beams"].to_numpy() > df_ep["antenna_config_number_of_elements"].to_numpy() ):
             sys.exit("Error Number of CSI-RS beams cannot be larger than number of antenna elements 2") 
             
@@ -300,7 +373,9 @@ class Network(Saveable):
  
     
     def sectorized_geographical_areas(self, hexagons, cell_site_positions_m, isd_m, bearing):
+       
        # Calculate sector geographical area using Shapely - intersection between hexagon and sector shapes
+       
        sectors = []
        number_of_sectors_per_site = np.size(bearing,0)
        for cell_site_index in range(0,np.size(cell_site_positions_m,0)):
@@ -310,12 +385,133 @@ class Network(Saveable):
                                                                                               np.radians(bearing[sector_index] - 360/number_of_sectors_per_site/2), 
                                                                                               np.radians(bearing[sector_index] + 360/number_of_sectors_per_site/2))))
        # Store using Geopandas
+       
        sectors_gp = geopandas.GeoSeries(sectors)  
        
        return sectors, sectors_gp        
     
     
+    def _compute_coverage_and_capacity_frequencies(self, df_ep: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Computes the coverage and capacity frequencies based on downlink carrier frequencies.
+    
+        Args:
+            df_ep (pd.DataFrame): Network Eng. Params. DataFrame
+    
+        Returns:
+            dl_freq_cov (np.float32): The lowest frequency, assigned as the coverage frequency
+            dl_freq_cap (np.ndarray[np.float32]): Array of remaining frequencies assigned to capacity
+        """
+        # Basic Sanity Check
+        assert isinstance(df_ep, pd.DataFrame), "df_ep must be a pandas DataFrame"
+        assert 'dl_carrier_frequency_GHz' in df_ep.columns, "'dl_carrier_frequency_GHz' column missing in df_ep"
+
+        # Get all unique downlink frequencies used in the network
+        dl_network_freq_GHz_arr = np.unique(df_ep['dl_carrier_frequency_GHz'].to_numpy())
+    
+        # Sort frequencies to ensure the lowest one is first — used as coverage (made for guarantee, as np.unique, already return sorted data)
+        dl_network_freq_GHz_arr.sort()
+    
+        # Select the lowest frequency as the coverage frequency
+        dl_freq_cov = dl_network_freq_GHz_arr[:1]
+    
+        # Remaining frequencies (if any) are used as capacity frequencies
+        dl_freq_cap = dl_network_freq_GHz_arr[1:]
+    
+        return dl_freq_cov, dl_freq_cap
+
+
+    def set_dfEp_coverage_capacity_cell_roles(self, 
+                                              dl_freq_cov: np.ndarray,
+                                              dl_freq_cap: np.ndarray) -> None:
+        """
+        Assigns 'coverage' or 'capacity' roles to cells based on frequency in the network engineering parameters DataFrame.
+
+        Args:
+            dl_freq_cov (np.ndarray): Frequency to assign as 'coverage'.
+            dl_freq_cap (np.ndarray): Frequencies to assign as 'capacity'.
+    
+        Returns:
+            pd.DataFrame: The updated DataFrame with a new 'cell_role' column.
+        """
+        # Basic Sanity Check
+        if not isinstance(self.df_ep, pd.DataFrame): raise TypeError("df_ep must be a pandas DataFrame")
+        # Store in DataFrame
+        self.df_ep.loc[self.df_ep['dl_carrier_frequency_GHz'].isin(dl_freq_cov), 'cell_role'] = 'coverage'
+        self.df_ep.loc[self.df_ep['dl_carrier_frequency_GHz'].isin(dl_freq_cap), 'cell_role'] = 'capacity'
+        
+        return
+
+
+    def _init_to_None_cell_pairing_in_df_ep(self) -> None:
+        # Sanity check: df_ep must be a pandas DataFrame
+        if not isinstance(self.df_ep, pd.DataFrame): raise TypeError("df_ep must be a pandas DataFrame")
+        self.df_ep = self.df_ep.assign(paired_cell=None)
+
+        return
+
+
+    def set_dfEP_carrier_shutdown_attributes(self) -> None:
+        """
+        Configure carrier shutdown attributes for cells in the self.df_ep DataFrame.
+        
+        Logic:
+        - If all cells are 'coverage' type, carrier shutdown remains disabled.
+        - If cells include both 'coverage' and 'capacity' roles, carrier shutdown is enabled.
+        - Applies usage thresholds for shutdown/wakeup conditions based on cell role.
+        
+        Columns modified within self.df_ep:
+        - radio_enable_carrier_shutdown (bool)
+        - carrier_shutdown_currentCell_usage_threshold (float or None)
+        - shutdown_carrier_wakeUp_pairedCell__currentCell_usage_threshold (float or None)
+        """
+        
+        # Sanity check: df_ep must be a pandas DataFrame
+        if not isinstance(self.df_ep, pd.DataFrame): raise TypeError("df_ep must be a pandas DataFrame")
+
+        # Threshold constants (now in lowercase for readability)
+        self.carrier_shutdown_currentCell_usage_threshold           = 0.30    # (capacity) if cell goes below x.x% usage, first shutdown condition met
+        self.carrier_wakeUp_pairedCell__currentCell_usage_threshold = 0.70   # (coverage) if cell have above x.x% usage, wake up condition met
+
+        # Case 1: All cells are coverage type → carrier shutdown disabled
+        if self.df_ep["cell_role"].eq("coverage").all():
+            # Initialize columns with default values
+            self.df_ep = self.df_ep.assign(
+                radio_enable_carrier_shutdown=False,
+                carrier_shutdown_currentCell_usage_threshold=None,
+                carrier_wakeUp_pairedCell__currentCell_usage_threshold=None,
+            )
+            return  # No further processing needed
+
+        # Validate roles: must contain only "coverage" and "capacity"
+        if set(self.df_ep["cell_role"].unique()) != {"capacity", "coverage"}:
+            raise ValueError("df_ep['cell_role'] must contain only 'coverage' and 'capacity' roles")
+
+        # Default initialization: Enable carrier shutdown for all rows
+        self.df_ep = self.df_ep.assign(
+            radio_enable_carrier_shutdown=False,
+            carrier_shutdown_currentCell_usage_threshold=None,
+            carrier_wakeUp_pairedCell__currentCell_usage_threshold=None,
+        )
+
+        # Apply thresholds by role using boolean masks
+        cap_mask = self.df_ep["cell_role"].eq("capacity")
+        cov_mask = self.df_ep["cell_role"].eq("coverage")
+
+        # Set thresholds for capacity cells
+        self.df_ep.loc[cap_mask, "carrier_shutdown_currentCell_usage_threshold"] \
+            = self.carrier_shutdown_currentCell_usage_threshold
+
+        # Set threshold for coverage cells
+        self.df_ep.loc[cov_mask, "carrier_wakeUp_pairedCell__currentCell_usage_threshold"] \
+            = self.carrier_wakeUp_pairedCell__currentCell_usage_threshold    
+
+        return
+
+
+
     def construct_data_frame(self):
+
        ### Construct enginering parameters 
                       
        engineering_parameters_d = {
@@ -323,10 +519,14 @@ class Network(Saveable):
             'name':  [ 'cell_%d'%(x) for x in range(0,self.number_of_cells)], 
             'site_ID':  np.repeat(np.arange(0,self.number_of_cell_sites), repeats=(int)(self.number_of_cells/self.number_of_cell_sites), axis=0),
             'site_name':  np.repeat([ 'site_%d'%(x) for x in range(0,self.number_of_cell_sites)], repeats=(int)(self.number_of_cells/self.number_of_cell_sites), axis=0),     
+            'cell_role' : np.repeat(None, repeats=self.number_of_cells, axis=0),
+            
             'RAT': np.repeat(self.RAT, repeats=self.number_of_cells, axis=0), 
             'radio_unit_ID': np.repeat(np.arange(0,self.number_of_cell_sites), repeats=(int)(self.number_of_cells/self.number_of_cell_sites), axis=0), 
             'radio_unit_type': np.repeat(self.radio_unit_type, repeats=self.number_of_cells, axis=0), 
-            'radio_unit_status': np.repeat('active', repeats=self.number_of_cells, axis=0),  #'active', 'symbol_shutdown', 'carrier_shutdown', 'dormancy'
+            'radio_enable_carrier_shutdown' : np.repeat(getattr(self, 'radio_enable_carrier_shutdown', False), repeats=self.number_of_cells, axis=0),
+            'radio_unit_initial_status': np.repeat('active', repeats=self.number_of_cells, axis=0),  #'active', 'symbol_shutdown', 'carrier_shutdown', 'dormancy'
+            
             'TX_number': np.repeat(self.TX_number, repeats=self.number_of_cells, axis=0), 
             'RX_number': np.repeat(self.RX_number, repeats=self.number_of_cells, axis=0), 
             'bbu_ID': np.arange(0, self.number_of_cells, dtype=int), 
@@ -350,7 +550,7 @@ class Network(Saveable):
             'subcarriers_per_PRB': np.repeat(self.subcarrier_per_PRB, repeats=self.number_of_cells, axis=0), 
             'ofdm_symbols_in_slot': np.repeat(self.ofdm_symbols_in_slot, repeats=self.number_of_cells, axis=0),
             
-            'BS_tx_power_dBm': np.repeat(self.BS_tx_power_dBm, repeats=self.number_of_cells, axis=0), 
+            'BS_tx_power_max_dBm': np.repeat(self.BS_tx_power_max_dBm, repeats=self.number_of_cells, axis=0), 
             
             'dl_freq_band': np.repeat(self.dl_freq_band, repeats=self.number_of_cells, axis=0), 
             'dl_earfcn': np.repeat(self.dl_earfcn, repeats=self.number_of_cells, axis=0),
@@ -373,9 +573,8 @@ class Network(Saveable):
             'ul_control_channel_overhead': np.repeat(self.ul_control_channel_overhead, repeats=self.number_of_cells, axis=0),  
             
             'CRS_ports': np.repeat(self.CRS_ports, repeats=self.number_of_cells, axis=0), 
-            'CRS_power_boosting_Pb': np.repeat(self.CRS_power_boosting_Pb, repeats=self.number_of_cells, axis=0), 
-            'BS_tx_power_CRS_RE_dBm': np.repeat(self.CRS_RE_tx_power_dBm, repeats=self.number_of_cells, axis=0),  
-            'BS_tx_power_PDSCH_dBm': np.repeat(self.CRS_RE_tx_power_dBm, repeats=self.number_of_cells, axis=0),  
+            'CRS_power_boosting_Pb': np.repeat(self.CRS_power_boosting_Pb, repeats=self.number_of_cells, axis=0),   
+            # 'BS_tx_power_PDSCH_dBm': np.repeat(self.CRS_RE_tx_power_dBm, repeats=self.number_of_cells, axis=0),  
 
             'antenna_pattern_model': np.repeat(self.antenna_pattern_model, repeats=self.number_of_cells, axis=0),
             
@@ -405,7 +604,6 @@ class Network(Saveable):
             'antenna_config_dgv_m': np.repeat(self.antenna_config_dgv_m, repeats=self.number_of_cells, axis=0),                
             'antenna_config_dh_m': np.repeat(self.antenna_config_dh_m, repeats=self.number_of_cells, axis=0), 
             'antenna_config_dv_m': np.repeat(self.antenna_config_dv_m, repeats=self.number_of_cells, axis=0),     
-
             'antenna_radius_ReflectorAperture_m' : np.repeat(getattr(self, 'antenna_radius_ReflectorAperture_m', None), repeats=self.number_of_cells, axis=0),
  
             'SSB_precoder': np.repeat(self.SSB_precoder, repeats=self.number_of_cells, axis=0), 
@@ -423,15 +621,18 @@ class Network(Saveable):
             'CSI_RS_BeamDirection_theta_deg' : [self.SSB_BeamDirection_theta_deg]*self.number_of_cells,
            
             'BS_propagation_model': np.repeat(self.BS_propagation_model, repeats=self.number_of_cells, axis=0), 
-            'BS_fast_channel_model': np.repeat(self.BS_fast_channel_model, repeats=self.number_of_cells, axis=0),           
+            'BS_fast_channel_model': np.repeat(self.BS_fast_channel_model, repeats=self.number_of_cells, axis=0),          
+            
             'BS_scheduling_model': np.repeat("random_per_cell_beam", repeats=self.number_of_cells, axis=0)
             }
        
        
-       # Create pandas dataframe with decorators for tracking
-       df_ep = TrackedDataFrame(data=engineering_parameters_d, key_to_track='BS_prb_requirement_calculator_model') # key_to_track is the name of the coloumn to keep track
-       
-       return df_ep
+       # Create padnas dataframe with decorators for tracking
+    #    df_ep = TrackedDataFrame(data=engineering_parameters_d, 
+    #                             key_to_track='BS_prb_requirement_calculator_model') # key_to_track is the name of the coloumn to keep track
+       df_ep = pd.DataFrame(data=engineering_parameters_d) 
+
+       return df_ep        
         
     
     def calculate_bs_velocity_vectors(self):
@@ -439,6 +640,8 @@ class Network(Saveable):
         # Generate a random 3D vector with z component equal to zero
          
         # Generate random numbers between -1 and 1
+        #random_velocities = 2 * self.rng.rand(self.number_of_ues, 2) - 1
+
         random_velocities = np.zeros((self.number_of_cells, 2))
         random_velocities[:,0] = 1
      
@@ -446,6 +649,7 @@ class Network(Saveable):
         velocities = np.column_stack((random_velocities, np.zeros(self.number_of_cells)))        
          
         # Normalize each row
+         
         self.velocity_vector_kmh = np.apply_along_axis(lambda row: row / np.linalg.norm(row), axis=1, arr=velocities)
         self.velocity_vector_kmh = self.velocity_kmh * self.velocity_vector_kmh
                
@@ -482,6 +686,7 @@ class Network(Saveable):
        self.bbu_type = "4G-Macro-BBU-v1"
        
        # Set relevant parameters
+                  
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -519,15 +724,15 @@ class Network(Saveable):
        self.BS_propagation_model = "ITU_R_M2135_UMa"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 49 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 49 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1 
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1     
        
        self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -541,7 +746,7 @@ class Network(Saveable):
        self.antenna_config_ver_theta_3dB_deg = 15
        self.antenna_config_ver_SLA_dB = 20
        self.antenna_config_ver_beta_mec_downtilt_deg = 90 # 0 degrees is pointing to the sky; 90 degrees is pointing to the horizon      
-       self.antenna_config_ver_beta_elec_downtilt_deg = 90 + 12 # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array
+       self.antenna_config_ver_beta_elec_downtilt_deg = 90 + 12 # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array  # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array 
 
        self.antenna_config_gamma_mec_slant_deg = 0
        self.antenna_config_gamma_elec_slant_deg = 0
@@ -582,7 +787,6 @@ class Network(Saveable):
        
        ### Construct UE enginering parameters 
        return self.construct_data_frame()           
-      
        
     def construct_scenario_ITU_R_M2135_UMi(self, site_deployment_obj):
        
@@ -594,6 +798,7 @@ class Network(Saveable):
            # Note that not in all scenarios reference site locations equals to cell site locations
        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
        # Calculate number of cell sites and cells
        self.number_of_cell_sites = len(self.cell_site_positions_m)
        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -612,9 +817,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Micro-RRU-v1"
-       self.bbu_type = "4G-Micro-BBU-v1"       
-       
+       self.bbu_type = "4G-Micro-BBU-v1"   
+
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -652,15 +858,15 @@ class Network(Saveable):
        self.BS_propagation_model = "ITU_R_M2135_UMi"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 44 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 44 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1     
        
        self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -713,7 +919,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters 
        return self.construct_data_frame()       
    
-
     def construct_scenario_3GPPTR36_814_Case_1(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 3
@@ -724,6 +929,7 @@ class Network(Saveable):
            # Note that not in all scenarios reference site locations equals to cell site locations
        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
        # Calculate number of cell sites and cells
        self.number_of_cell_sites = len(self.cell_site_positions_m)
        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -742,9 +948,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Macro-RRU-v1"
-       self.bbu_type = "4G-Macro-BBU-v1"       
+       self.bbu_type = "4G-Macro-BBU-v1"      
        
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -782,15 +989,15 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_814_Case_1"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 43-0 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 43-0 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1       
        
        self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -843,7 +1050,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters
        return self.construct_data_frame()     
    
-
     def construct_scenario_3GPPTR36_814_Case_1_single_bs(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 3
@@ -853,6 +1059,7 @@ class Network(Saveable):
        # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations 
            # Note that not in all scenarios reference site locations equals to cell site locations
        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
+
        
        # Calculate number of cell sites and cells
        self.number_of_cell_sites = len(self.cell_site_positions_m)
@@ -872,9 +1079,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Macro-RRU-v1"
-       self.bbu_type = "4G-Macro-BBU-v1"       
-       
+       self.bbu_type = "4G-Macro-BBU-v1"    
+
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -912,15 +1120,15 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_814_Case_1"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 43-0 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 43-0 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1       
        
        self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -973,7 +1181,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters
        return self.construct_data_frame()    
        
-
     def construct_scenario_3GPPTR36_814_Case_1_omni(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 1
@@ -984,6 +1191,7 @@ class Network(Saveable):
            # Note that not in all scenarios reference site locations equals to cell site locations
        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
        # Calculate number of cell sites and cells
        self.number_of_cell_sites = len(self.cell_site_positions_m)
        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -1002,9 +1210,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Macro-RRU-v1"
-       self.bbu_type = "4G-Macro-BBU-v1"       
+       self.bbu_type = "4G-Macro-BBU-v1"      
        
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -1042,15 +1251,15 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_814_Case_1"
        self.BS_fast_channel_model = "Rician"       
 
-       self.BS_tx_power_dBm = 43-0 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 43-0 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1     
        
        self.antenna_pattern_model = "omnidirectional" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -1103,7 +1312,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters
        return self.construct_data_frame()    
 
-
     def construct_scenario_3GPPTR36_814_Case_1_single_bs_omni(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 1
@@ -1133,9 +1341,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Macro-RRU-v1"
-       self.bbu_type = "4G-Macro-BBU-v1"       
-       
+       self.bbu_type = "4G-Macro-BBU-v1"   
+
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -1173,15 +1382,15 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_814_Case_1"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 43-0 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 43-0 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1 
        
        self.antenna_pattern_model = "omnidirectional" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -1233,8 +1442,7 @@ class Network(Saveable):
        
        ### Construct UE enginering parameters
        return self.construct_data_frame() 
-
-
+   
     def construct_scenario_3GPPTR36_814_Case_1_omni_dana(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 1
@@ -1242,7 +1450,9 @@ class Network(Saveable):
        self.indoor = 0  
         
        # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations 
-           # Note that not in all scenarios reference site locations equals to cell site locations       
+           # Note that not in all scenarios reference site locations equals to cell site locations
+       #self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
+       
        self.cell_site_positions_m = np.full((3,2), np.nan, dtype=np.single) 
        self.cell_site_positions_m[0,:] = np.array([-50,-100])
        self.cell_site_positions_m[1,:] = np.array([50, 0])
@@ -1266,9 +1476,11 @@ class Network(Saveable):
        
        # Type of rado unit and bbu 
        self.radio_unit_type = "4G-Macro-RRU-v1"
-       self.bbu_type = "4G-Macro-BBU-v1"       
+       self.bbu_type = "4G-Macro-BBU-v1"      
+
        
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -1306,15 +1518,15 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_814_Case_1"
        self.BS_fast_channel_model = "Rician"
 
-       self.BS_tx_power_dBm = 43-0 #We substract here the feeder loss
+       self.BS_tx_power_max_dBm = 43-0 #We substract here the feeder loss
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1        
        
-       self.CRS_ports = 1,
-       self.CRS_RE_tx_power_dBm = -1,
-       self.CRS_power_boosting_Pb = -1,       
+       self.CRS_ports = 1
+
+       self.CRS_power_boosting_Pb = -1     
        
        self.antenna_pattern_model = "omnidirectional" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
        
@@ -1397,8 +1609,10 @@ class Network(Saveable):
        # Type of rado unit and bbu 
        self.radio_unit_type = "5G-Macro-AAU-v1"
        self.bbu_type = "5G-Macro-BBU-v1"   
-        
+       
+
        # Set relevant parameters
+        
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -1436,14 +1650,14 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR38_901_UMa"
        self.BS_fast_channel_model = "3GPPTR38_901_UMa" #"3GPPTR38_901_UMa" #"Rician"
 
-       self.BS_tx_power_dBm = 49
+       self.BS_tx_power_max_dBm = 49
        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
        
-       self.TX_number = 32 
-       self.RX_number = 32        
+       self.TX_number = 16 
+       self.RX_number = 16        
        
        self.CRS_ports = 2
-       self.CRS_RE_tx_power_dBm = -1
+       
        self.CRS_power_boosting_Pb = -1       
        
        self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -1496,8 +1710,7 @@ class Network(Saveable):
     
        ### Construct UE enginering parameters
        return self.construct_data_frame()  
-
-
+   
     def construct_scenario_3GPPTR38_901_UMa_C2(self, site_deployment_obj):
               
        self.number_of_sectors_per_site = 3
@@ -1527,8 +1740,10 @@ class Network(Saveable):
        # Type of rado unit and bbu 
        self.radio_unit_type = "5G-Macro-AAU-v1"
        self.bbu_type = "5G-Macro-BBU-v1"   
-        
+       
+
        # Set relevant parameters
+        
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -1566,14 +1781,14 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR38_901_UMa"
        self.BS_fast_channel_model = "3GPPTR38_901_UMa" #"3GPPTR38_901_UMa" #"Rician"
 
-       self.BS_tx_power_dBm = 49
+       self.BS_tx_power_max_dBm = 49
        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
        
        self.TX_number = 4 
        self.RX_number = 4       
        
        self.CRS_ports = 4
-       self.CRS_RE_tx_power_dBm = -1
+       
        self.CRS_power_boosting_Pb = -1      
        
        self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -1626,8 +1841,7 @@ class Network(Saveable):
     
        ### Construct UE enginering parameters
        return self.construct_data_frame()  
-
-
+       
     def construct_scenario_3GPPTR38_901_UMa_large_scale_calibration(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -1656,9 +1870,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"          
-       
+        self.bbu_type = "5G-Macro-BBU-v1"     
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -1696,14 +1911,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 49
+        self.BS_tx_power_max_dBm = 49
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
 
         self.TX_number = 10 
         self.RX_number = 10        
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -1757,7 +1972,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()  
 
-
     def construct_scenario_3GPPTR38_901_UMa_large_scale_calibration_single_bs(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -1788,8 +2002,9 @@ class Network(Saveable):
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
         self.bbu_type = "5G-Macro-BBU-v1"            
-       
+        
         # Set relevant parameters        
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -1827,14 +2042,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 49
+        self.BS_tx_power_max_dBm = 49
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa
         
         self.TX_number = 10 
         self.RX_number = 10           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -1888,7 +2103,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()      
 
-
     def construct_scenario_3GPPTR38_901_UMa_large_scale_calibration_single_sector(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 1
@@ -1919,8 +2133,10 @@ class Network(Saveable):
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
         self.bbu_type = "5G-Macro-BBU-v1"            
+
        
         # Set relevant parameters        
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -1958,14 +2174,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 49
+        self.BS_tx_power_max_dBm = 49
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 8 
         self.RX_number = 8           
         
         self.CRS_ports = 8
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1      
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2019,7 +2235,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()       
 
-
     def construct_scenario_3GPPTR38_901_UMa_large_scale_calibration_sn(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -2049,8 +2264,9 @@ class Network(Saveable):
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
         self.bbu_type = "5G-Macro-BBU-v1"          
-       
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -2088,14 +2304,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "3GPPTR38_901_UMa"        
       
-        self.BS_tx_power_dBm = 49
+        self.BS_tx_power_max_dBm = 49
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 10 
         self.RX_number = 10           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2148,8 +2364,7 @@ class Network(Saveable):
      
         ### Construct UE enginering parameters       
         return self.construct_data_frame()  
-
-
+    
     def construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -2159,6 +2374,7 @@ class Network(Saveable):
         # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations 
             # Note that not in all scenarios reference site locations equals to cell site locations
         self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
+
        
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
@@ -2178,9 +2394,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu 
         self.radio_unit_type = "4G-Macro-RRU-v1"
-        self.bbu_type = "4G-Macro-BBU-v1"            
-       
+        self.bbu_type = "4G-Macro-BBU-v1"     
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -2199,10 +2416,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 20   
-        self.dl_subcarrier_spacing_kHz = 15 * 20/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15) #self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15) # self.dl_subcarrier_spacing_kHz
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15) # self.dl_subcarrier_spacing_kHz
+        self.dl_subcarrier_spacing_kHz = 15
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 20
@@ -2218,14 +2435,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 49
+        self.BS_tx_power_max_dBm = 49
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 8 
         self.RX_number = 8           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2289,6 +2506,7 @@ class Network(Saveable):
             # Note that not in all scenarios reference site locations equals to cell site locations
         self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
         self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -2307,14 +2525,16 @@ class Network(Saveable):
        
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"           
-       
+        self.bbu_type = "5G-Macro-BBU-v1"          
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
         self.subcarrier_per_PRB =  12
         self.ofdm_symbols_in_slot = 14
+        
         
         self.dl_freq_band = -1 #41
         self.dl_earfcn = -1 #40936
@@ -2328,10 +2548,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -2339,22 +2559,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/10
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 55
+        self.BS_tx_power_max_dBm = 55
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 32 
         self.RX_number = 32           
         
         self.CRS_ports = 32
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1      
     
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2407,8 +2627,7 @@ class Network(Saveable):
      
         ### Construct UE enginering parameters       
         return self.construct_data_frame()         
-
-
+ 
     def construct_scenario_3GPPTR38_901_UMa_C_band_large_scale(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -2438,9 +2657,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu 
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"           
-       
+        self.bbu_type = "5G-Macro-BBU-v1"      
+ 
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -2459,10 +2679,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -2470,22 +2690,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/10
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_901_UMa"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 55
+        self.BS_tx_power_max_dBm = 55
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 32 
         self.RX_number = 32           
         
         self.CRS_ports = 32
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1      
     
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2569,9 +2789,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu
        self.radio_unit_type = "5G-Micro-AAU-v1"
-       self.bbu_type = "5G-Micro-BBU-v1"
-       
+       self.bbu_type = "5G-Micro-BBU-v1"   
+
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -2609,14 +2830,14 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR38_901_UMi"
        self.BS_fast_channel_model = "3GPPTR38_901_UMi" #"3GPPTR38_901_UMa" #"Rician"
 
-       self.BS_tx_power_dBm = 44
+       self.BS_tx_power_max_dBm = 44
        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
        
-       self.TX_number = 32 
-       self.RX_number = 32          
+       self.TX_number = 16 
+       self.RX_number = 16          
        
        self.CRS_ports = 2
-       self.CRS_RE_tx_power_dBm = -1
+       
        self.CRS_power_boosting_Pb = -1      
        
        self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2670,7 +2891,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters
        return self.construct_data_frame() 
    
-
     def construct_scenario_3GPPTR38_901_UMi_C2(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 3
@@ -2681,6 +2901,7 @@ class Network(Saveable):
            # Note that not in all scenarios reference site locations equals to cell site locations
        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
        # Calculate number of cell sites and cells
        self.number_of_cell_sites = len(self.cell_site_positions_m)
        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -2700,8 +2921,9 @@ class Network(Saveable):
        # Type of rado unit and bbu
        self.radio_unit_type = "5G-Micro-AAU-v1"
        self.bbu_type = "5G-Micro-BBU-v1"   
-
+       
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -2739,14 +2961,14 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR38_901_UMi"
        self.BS_fast_channel_model = "3GPPTR38_901_UMi" #"3GPPTR38_901_UMa" #"Rician"
 
-       self.BS_tx_power_dBm = 44
+       self.BS_tx_power_max_dBm = 44
        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
        
        self.TX_number = 4 
        self.RX_number = 4          
        
        self.CRS_ports = 4
-       self.CRS_RE_tx_power_dBm = -1
+       
        self.CRS_power_boosting_Pb = -1       
        
        self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2800,7 +3022,6 @@ class Network(Saveable):
        ### Construct UE enginering parameters
        return self.construct_data_frame() 
     
-
     def construct_scenario_3GPPTR38_901_UMi_large_scale_calibration(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -2811,6 +3032,7 @@ class Network(Saveable):
             # Note that not in all scenarios reference site locations equals to cell site locations
         self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
         self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -2830,8 +3052,9 @@ class Network(Saveable):
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Micro-AAU-v1"
         self.bbu_type = "5G-Micro-BBU-v1"        
-       
+        
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -2869,14 +3092,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_901_UMi"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 44
+        self.BS_tx_power_max_dBm = 44
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 10 
         self.RX_number = 10           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -2930,7 +3153,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame() 
 
-
     def construct_scenario_3GPPTR38_901_UMi_C_band_large_scale(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -2941,6 +3163,7 @@ class Network(Saveable):
             # Note that not in all scenarios reference site locations equals to cell site locations
         self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
 
+       
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
         self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
@@ -2959,9 +3182,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Micro-AAU-v1"
-        self.bbu_type = "5G-Micro-BBU-v1"           
-       
+        self.bbu_type = "5G-Micro-BBU-v1"        
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -2980,10 +3204,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -2991,22 +3215,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/10
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_901_UMi"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 50
+        self.BS_tx_power_max_dBm = 50
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 32 
         self.RX_number = 32           
         
         self.CRS_ports = 32
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1      
     
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -3060,7 +3284,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame() 
 
-
     def construct_scenario_3GPPTR38_901_UMi_fr3_large_scale(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -3070,6 +3293,7 @@ class Network(Saveable):
         # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations 
             # Note that not in all scenarios reference site locations equals to cell site locations
         self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m 
+
        
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
@@ -3089,9 +3313,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "6G-Micro-AAU-v1"
-        self.bbu_type = "6G-Micro-BBU-v1"           
-       
+        self.bbu_type = "6G-Micro-BBU-v1"    
+        
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 3
@@ -3110,10 +3335,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 200   
-        self.dl_subcarrier_spacing_kHz = 15 * 200/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 120
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 200
@@ -3121,22 +3346,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 200/10
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 120
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_901_UMi"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 50
+        self.BS_tx_power_max_dBm = 50
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 64 
         self.RX_number = 64           
         
         self.CRS_ports = 64
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -3190,7 +3415,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()     
      
-
     def construct_scenario_3GPPTR38_901_UPi_fr3_large_scale(self, site_deployment_obj):
       
         self.number_of_sectors_per_site = 3
@@ -3223,9 +3447,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "6G-Picro-AAU-v1"
-        self.bbu_type = "6G-Picro-BBU-v1"           
-       
+        self.bbu_type = "6G-Picro-BBU-v1"      
+        
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 3
@@ -3244,10 +3469,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 200   
-        self.dl_subcarrier_spacing_kHz = 15 * 200/10
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 120
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 200
@@ -3255,22 +3480,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 200/10
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 120
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_901_UMi"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 50
+        self.BS_tx_power_max_dBm = 50
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         
         self.TX_number = 64 
         self.RX_number = 64           
         
         self.CRS_ports = 64
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -3353,9 +3578,11 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"          
+        self.bbu_type = "5G-Macro-BBU-v1" 
+
        
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -3374,10 +3601,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/20
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -3385,22 +3612,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/20
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 55
+        self.BS_tx_power_max_dBm = 55
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
 
         self.TX_number = 10 
         self.RX_number = 10        
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR36_814_UMa" #"omnidirectional" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -3454,7 +3681,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()    
 
-
     def construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_UPA(self, site_deployment_obj):
         
         self.number_of_sectors_per_site = 1
@@ -3483,9 +3709,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"          
-       
+        self.bbu_type = "5G-Macro-BBU-v1" 
+            
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -3504,10 +3731,10 @@ class Network(Saveable):
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/20
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -3515,22 +3742,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/20
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 55
+        self.BS_tx_power_max_dBm = 55
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
 
         self.TX_number = 32 
         self.RX_number = 32        
         
-        self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        self.CRS_ports = 32
+        
         self.CRS_power_boosting_Pb = -1       
         
         
@@ -3565,38 +3792,51 @@ class Network(Saveable):
             P_num = 2
         self.antenna_config_number_of_elements = self.antenna_config_Mg * self.antenna_config_Ng * self.antenna_config_M * self.antenna_config_N * P_num
        
-        self.antenna_config_dgh_m = 0.5 * self.dl_carrier_wavelength_m
-        self.antenna_config_dgv_m = 0.5 * self.dl_carrier_wavelength_m
+        self.antenna_config_dgh_m = 0 * self.dl_carrier_wavelength_m
+        self.antenna_config_dgv_m = 0 * self.dl_carrier_wavelength_m
         self.antenna_config_dh_m = 0.5 * self.dl_carrier_wavelength_m
         self.antenna_config_dv_m = 0.5 * self.dl_carrier_wavelength_m
        
+        # # SSB precoding 
+        # self.SSB_precoder = "custom_vMB" 
+        # self.SSB_number_of_beams_H =  1
+        # self.SSB_number_of_beams_V =  1
+        # self.SSB_number_of_beams = self.SSB_number_of_beams_H *self.SSB_number_of_beams_V
+        
+        # # SSB Direction
+        # # Note that the direction of the beam are computed according to the LCS of the base panel
+        # self.SSB_BeamDirection_phi_deg = str(list(np.array([0.00])))
+        # self.SSB_BeamDirection_theta_deg = str(list(np.full(self.SSB_number_of_beams, self.antenna_config_ver_beta_elec_downtilt_deg-90, dtype=float)))
+        
+
+        # # CSI-RS precoding
+        # self.CSI_RS_precoder = "custom_vMB"
+        # self.CSI_RS_number_of_beams_H =  1
+        # self.CSI_RS_number_of_beams_V =  1
+        # self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V  
+        
+        # # CSI-RS Direction
+        # # Note that the direction of the beam are computed according to the LCS of the base panel
+        # self.CSI_RS_BeamDirection_phi_deg = str(list(np.array([0.00])))
+        # self.CSI_RS_BeamDirection_theta_deg = str(list(np.full(self.CSI_RS_number_of_beams, self.antenna_config_ver_beta_elec_downtilt_deg-90, dtype=float)))
+        
+        # ### Construct UE enginering parameters       
+        # return self.construct_data_frame()
         # SSB precoding 
-        self.SSB_precoder = "custom_vMB" 
-        self.SSB_number_of_beams_H =  1
-        self.SSB_number_of_beams_V =  1
+        self.SSB_precoder = "DFT" #"3GPP_single_downtilted_beam"
+        self.SSB_number_of_beams_V =  2
+        self.SSB_number_of_beams_H =  4        
         self.SSB_number_of_beams = self.SSB_number_of_beams_H *self.SSB_number_of_beams_V
         
-        # SSB Direction
-        # Note that the direction of the beam are computed according to the LCS of the base panel
-        self.SSB_BeamDirection_phi_deg = str(list(np.array([0.00])))
-        self.SSB_BeamDirection_theta_deg = str(list(np.full(self.SSB_number_of_beams, self.antenna_config_ver_beta_elec_downtilt_deg-90, dtype=float)))
-        
-
         # CSI-RS precoding
-        self.CSI_RS_precoder = "custom_vMB"
-        self.CSI_RS_number_of_beams_H =  1
-        self.CSI_RS_number_of_beams_V =  1
-        self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V  
-        
-        # CSI-RS Direction
-        # Note that the direction of the beam are computed according to the LCS of the base panel
-        self.CSI_RS_BeamDirection_phi_deg = str(list(np.array([0.00])))
-        self.CSI_RS_BeamDirection_theta_deg = str(list(np.full(self.CSI_RS_number_of_beams, self.antenna_config_ver_beta_elec_downtilt_deg-90, dtype=float)))
-        
+        self.CSI_RS_precoder = "DFT" #"3GPP_single_downtilted_beam"
+        self.CSI_RS_number_of_beams_V =  4
+        self.CSI_RS_number_of_beams_H =  8        
+        self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V
+     
         ### Construct UE enginering parameters       
-        return self.construct_data_frame()
-
-  
+        return self.construct_data_frame() 
+        
     def construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_Reflector(self, site_deployment_obj):
         self.number_of_sectors_per_site = 1
         self.bs_antenna_height_m = 1000
@@ -3624,9 +3864,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"          
-       
+        self.bbu_type = "5G-Macro-BBU-v1"        
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -3640,15 +3881,15 @@ class Network(Saveable):
         if (self.dl_freq_band != -1 and self.dl_earfcn != -1):
             self.dl_carrier_frequency_GHz, self.ul_carrier_frequency_GHz, =  uaearfcn.earfcn2freq(self.freq_band,self.dl_earfcn)
         else:
-            self.dl_carrier_frequency_GHz = 3.5
-            self.ul_carrier_frequency_GHz = 3.5
+            self.dl_carrier_frequency_GHz = 1.8
+            self.ul_carrier_frequency_GHz = 1.8
       
         self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
         self.dl_bandwidth_MHz = 100   
-        self.dl_subcarrier_spacing_kHz = 15 * 100/20
-        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.dl_subcarrier_spacing_kHz = 30
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
         
         self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
         self.ul_bandwidth_MHz = 100
@@ -3656,22 +3897,22 @@ class Network(Saveable):
             if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
                 np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
                 exit(0) 
-        self.ul_subcarrier_spacing_kHz = 15 * 100/20
-        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(20, 15)
-        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
-        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        self.ul_subcarrier_spacing_kHz = 30
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
         
         self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 55
+        self.BS_tx_power_max_dBm = 55
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
 
         self.TX_number = 1 
         self.RX_number = 1        
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1     
         
         
@@ -3682,7 +3923,7 @@ class Network(Saveable):
         # Reflector Parameters
         ## Within 3GPPTR38_811, the driven parameter is 'a', defined as the radius of the aperture of the reflector antenna
         ## 'a' is defined as multiple of the reflector design Wavelenght
-        ## Note that now the radius has been set using the carrier freq wavelenght, 
+        ## Note that now the radius has been set using the carrier freqe wavelenght, 
         ## but potentially can be any related to the design of the reflector.
         self.reflector_aperture_radius_multipleWavelenght = 10
         self.antenna_radius_ReflectorAperture_m = self.reflector_aperture_radius_multipleWavelenght * self.dl_carrier_wavelength_m
@@ -3752,7 +3993,597 @@ class Network(Saveable):
         
         ### Construct UE enginering parameters       
         return self.construct_data_frame()
+        
+        
+        
+    def construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_TriReflector(self, site_deployment_obj):
+        self.number_of_sectors_per_site = 3
+        self.bs_antenna_height_m = 1000
+        self.indoor = 0
 
+
+        # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations
+            # Note that not in all scenarios reference site locations equals to cell site locations
+        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m
+
+        # Calculate number of cell sites and cells
+        self.number_of_cell_sites = len(self.cell_site_positions_m)
+        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
+
+        # Derive cell locations
+            # Note that striclity speaking this represents the location of the cell site where the BS that generetes the cell is located
+        self.cell_positions_m = np.repeat(self.cell_site_positions_m, repeats=self.number_of_sectors_per_site, axis=0)
+        self.cell_positions_m = np.hstack((self.cell_positions_m , np.ones((self.number_of_cells,1)) * self.bs_antenna_height_m))
+
+        # Set velocity
+        self.velocity_kmh = 0
+        self.calculate_bs_velocity_vectors()
+
+        # Type of rado unit and bbu
+
+        self.radio_unit_type = "5G-Macro-AAU-v1"
+        self.bbu_type = "5G-Macro-BBU-v1"        
+
+        # Set relevant parameters
+        
+        self.fdd_tdd_ind	= "TDD"
+        self.subframe_assignment = "SA2"
+        self.FR = 1
+        self.subcarrier_per_PRB =  12
+        self.ofdm_symbols_in_slot = 14
+        
+        self.dl_freq_band = -1 #41
+        self.dl_earfcn = -1 #40936
+        self.ul_freq_band = -1 #41
+        self.ul_earfcn = -1 #40936
+        if (self.dl_freq_band != -1 and self.dl_earfcn != -1):
+            self.dl_carrier_frequency_GHz, self.ul_carrier_frequency_GHz, =  uaearfcn.earfcn2freq(self.freq_band,self.dl_earfcn)
+        else:
+            self.dl_carrier_frequency_GHz = 3.5
+            self.ul_carrier_frequency_GHz = 3.5
+      
+        self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
+        self.dl_bandwidth_MHz = 100   
+        self.dl_subcarrier_spacing_kHz = 60
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz, self.dl_subcarrier_spacing_kHz)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
+        
+        self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
+        self.ul_bandwidth_MHz = 100
+        if (self.fdd_tdd_ind	== "TDD"):
+            if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
+                np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
+                exit(0) 
+        self.ul_subcarrier_spacing_kHz = 60
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz, self.ul_subcarrier_spacing_kHz)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
+        
+        self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
+        self.BS_fast_channel_model = "Rician"        
+      
+        self.BS_tx_power_max_dBm = 55
+        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
+
+        self.TX_number = 1 
+        self.RX_number = 1        
+        
+        self.CRS_ports = 1
+        self.CRS_RE_tx_power_dBm = -1
+        self.CRS_power_boosting_Pb = -1     
+        
+        
+        # Antenna patter model
+        self.antenna_pattern_model = "3GPPTR38_811" # The following model defines a reflector antenna
+    
+
+        # Reflector Parameters
+        ## Within 3GPPTR38_811, the driven parameter is 'a', defined as the radius of the aperture of the reflector antenna
+        ## 'a' is defined as multiple of the reflector design Wavelenght
+        ## Note that now the radius has been set using the carrier freqe wavelenght, 
+        ## but potentially can be any related to the design of the reflector.
+        self.reflector_aperture_radius_multipleWavelenght = 10
+        self.antenna_radius_ReflectorAperture_m = self.reflector_aperture_radius_multipleWavelenght * self.dl_carrier_wavelength_m
+        # Note that the total aperture is defined as the diameter of the reflect. 
+        # Often, in literature, this parameter is reffered as 'Reflector Diameter'
+        self.antenna_TotalAperture_geom_m = 2*self.antenna_radius_ReflectorAperture_m
+
+        self.reflector_aperture_efficiency = 1
+        
+        # Total Reflect Gain
+        antenna_config_max_gain_lin = self.reflector_aperture_efficiency *\
+                                      np.square((np.pi*self.antenna_TotalAperture_geom_m)/self.dl_carrier_wavelength_m).astype(float).item()  
+        self.antenna_config_max_gain_dBi = 10*np.log10(antenna_config_max_gain_lin)
+        del antenna_config_max_gain_lin
+        
+        # Antenna mechanical and electrical directions configuration
+        self.antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, 270])
+        self.antenna_config_hor_alpha_elec_bearing_deg = np.array([0, 0, 0])
+        
+        # 0 degrees is pointing to the sky; 90 degrees is pointing to the horizon  
+        downtilt_adjust_deg = 1.5 
+        mec_downtilt_deg = 180 - downtilt_adjust_deg
+        self.antenna_config_ver_beta_mec_downtilt_deg = mec_downtilt_deg
+        # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array 
+        self.antenna_config_ver_beta_elec_downtilt_deg = 90
+        
+        self.antenna_config_gamma_mec_slant_deg = 0
+        self.antenna_config_gamma_elec_slant_deg = 0
+        
+        
+        # Number of antennas and polarization
+        self.antenna_config_Mg = 1
+        self.antenna_config_Ng = 1
+        self.antenna_config_M = 1 # number of rows (elements in vertical)
+        self.antenna_config_N = 1 # number of columns (elements in horizontal)
+        self.antenna_config_P = "single" # (“single” or “dual”)    
+        self.antenna_config_P_type = "V" # (“V” or “H” for single polarization. “VH” or “cross” for dual polarization.)
+        
+        
+        if self.antenna_config_P == 'single': P_num = 1
+        else: P_num = 2
+        self.antenna_config_number_of_elements = self.antenna_config_Mg * self.antenna_config_Ng * self.antenna_config_M * self.antenna_config_N * P_num
+       
+        
+        # The following parameters have to be defined for the sake of compliance with df_ep inputs
+        # And other part of the code (e.g. distance computation and LCS antenna computation)
+        # Value initialized with None will break the code
+        self.antenna_config_dgh_m = 0
+        self.antenna_config_dgv_m = 0
+        self.antenna_config_dh_m = 0
+        self.antenna_config_dv_m = 0
+        
+        self.antenna_config_hor_phi_3dB_deg = None
+        self.antenna_config_ver_theta_3dB_deg = None
+        self.antenna_config_hor_A_m_dB = None
+        self.antenna_config_ver_SLA_dB = None
+        
+        # SSB precoding 
+        self.SSB_precoder = "None" 
+        self.SSB_number_of_beams_H =  1
+        self.SSB_number_of_beams_V =  1
+        self.SSB_number_of_beams = self.SSB_number_of_beams_H *self.SSB_number_of_beams_V
+      
+        # CSI-RS precoding
+        self.CSI_RS_precoder = "None"
+        self.CSI_RS_number_of_beams_H =  1
+        self.CSI_RS_number_of_beams_V =  1
+        self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V  
+        
+        
+        ### Construct UE enginering parameters       
+        return self.construct_data_frame()
+
+
+    def construct_scenario_3GPPTR38_811_Dense_Urban_SingleHAPS_Reflector(self, site_deployment_obj):
+        """ This scenario has a single HAPS covering UMa grid"""
+        self.number_of_sectors_per_site = 1
+        self.bs_antenna_height_m = 1000
+        self.indoor = 0
+
+
+        # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations
+            # Note that not in all scenarios reference site locations equals to cell site locations
+        # here we only take position of the 1st cell cite which is expected to be central cell
+        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m[:1,:]
+
+        # Calculate number of cell sites and cells
+        self.number_of_cell_sites = len(self.cell_site_positions_m)  # expected to be 1
+        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
+
+        # Derive cell locations
+            # Note that striclity speaking this represents the location of the cell site where the BS that generetes the cell is located
+        self.cell_positions_m = np.repeat(self.cell_site_positions_m, repeats=self.number_of_sectors_per_site, axis=0)
+        self.cell_positions_m = np.hstack((self.cell_positions_m , np.ones((self.number_of_cells,1)) * self.bs_antenna_height_m))
+
+        # Set velocity
+        self.velocity_kmh = 0
+        self.calculate_bs_velocity_vectors()
+
+        # Type of rado unit and bbu
+
+        self.radio_unit_type = "5G-Macro-AAU-v1"
+        self.bbu_type = "5G-Macro-BBU-v1"          
+       
+        # Set relevant parameters
+        
+        self.fdd_tdd_ind	= "TDD"
+        self.subframe_assignment = "SA2"
+        self.FR = 1
+        self.subcarrier_per_PRB =  12
+        self.ofdm_symbols_in_slot = 14
+        
+        self.dl_freq_band = -1 #41
+        self.dl_earfcn = -1 #40936
+        self.ul_freq_band = -1 #41
+        self.ul_earfcn = -1 #40936
+        if (self.dl_freq_band != -1 and self.dl_earfcn != -1):
+            self.dl_carrier_frequency_GHz, self.ul_carrier_frequency_GHz, =  uaearfcn.earfcn2freq(self.freq_band,self.dl_earfcn)
+        else:
+            self.dl_carrier_frequency_GHz = 3.5
+            self.ul_carrier_frequency_GHz = 3.5
+      
+        self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
+        self.dl_bandwidth_MHz = 100   
+        self.dl_subcarrier_spacing_kHz = 15 * 100/10
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(10, 15)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        
+        self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
+        self.ul_bandwidth_MHz = 100
+        if (self.fdd_tdd_ind	== "TDD"):
+            if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
+                np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
+                exit(0) 
+        self.ul_subcarrier_spacing_kHz = 15 * 100/10
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(10, 15)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        
+        self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
+        self.BS_fast_channel_model = "Rician"        
+      
+        self.BS_tx_power_max_dBm = 55
+        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
+
+        self.TX_number = 1 
+        self.RX_number = 1        
+        
+        self.CRS_ports = 1
+        
+        self.CRS_power_boosting_Pb = -1     
+        
+        
+        # Antenna patter model
+        self.antenna_pattern_model = "3GPPTR38_811" # The following model defines a reflector antenna
+    
+
+        # Reflector Parameters
+        ## Within 3GPPTR38_811, the driven parameter is 'a', defined as the radius of the aperture of the reflector antenna
+        ## 'a' is defined as multiple of the reflector design Wavelenght
+        ## Note that now the radius has been set using the carrier freqe wavelenght, 
+        ## but potentially can be any related to the design of the reflector.
+        self.reflector_aperture_radius_multipleWavelenght = 10
+        self.antenna_radius_ReflectorAperture_m = self.reflector_aperture_radius_multipleWavelenght * self.dl_carrier_wavelength_m
+        # Note that the total aperture is defined as the diameter of the reflect. 
+        # Often, in literature, this parameter is reffered as 'Reflector Diameter'
+        self.antenna_TotalAperture_geom_m = 2*self.antenna_radius_ReflectorAperture_m
+
+        self.reflector_aperture_efficiency = 1
+        
+        # Total Reflect Gain
+        antenna_config_max_gain_lin = self.reflector_aperture_efficiency *\
+                                      np.square((np.pi*self.antenna_TotalAperture_geom_m)/self.dl_carrier_wavelength_m).astype(float).item()  
+        self.antenna_config_max_gain_dBi = 10*np.log10(antenna_config_max_gain_lin)
+        del antenna_config_max_gain_lin
+        
+        # Antenna mechanical and electrical directions configuration
+        self.antenna_config_hor_alpha_mec_bearing_deg = np.array([0])
+        self.antenna_config_hor_alpha_elec_bearing_deg = np.array([0])
+        
+        # 0 degrees is pointing to the sky; 90 degrees is pointing to the horizon  
+        self.antenna_config_ver_beta_mec_downtilt_deg = 180
+        # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array 
+        self.antenna_config_ver_beta_elec_downtilt_deg = 90
+        
+        self.antenna_config_gamma_mec_slant_deg = 0
+        self.antenna_config_gamma_elec_slant_deg = 0
+        
+        
+        # Number of antennas and polarization
+        self.antenna_config_Mg = 1
+        self.antenna_config_Ng = 1
+        self.antenna_config_M = 1 # number of rows (elements in vertical)
+        self.antenna_config_N = 1 # number of columns (elements in horizontal)
+        self.antenna_config_P = "single" # (“single” or “dual”)    
+        self.antenna_config_P_type = "V" # (“V” or “H” for single polarization. “VH” or “cross” for dual polarization.)
+        
+        
+        if self.antenna_config_P == 'single': P_num = 1
+        else: P_num = 2
+        self.antenna_config_number_of_elements = self.antenna_config_Mg * self.antenna_config_Ng * self.antenna_config_M * self.antenna_config_N * P_num
+       
+        
+        # The following parameters have to be defined for the sake of compliance with df_ep inputs
+        # And other part of the code (e.g. distance computation and LCS antenna computation)
+        # Value initialized with None will break the code
+        self.antenna_config_dgh_m = 0
+        self.antenna_config_dgv_m = 0
+        self.antenna_config_dh_m = 0
+        self.antenna_config_dv_m = 0
+        
+        self.antenna_config_hor_phi_3dB_deg = None
+        self.antenna_config_ver_theta_3dB_deg = None
+        self.antenna_config_hor_A_m_dB = None
+        self.antenna_config_ver_SLA_dB = None
+        
+        # SSB precoding 
+        self.SSB_precoder = "None" 
+        self.SSB_number_of_beams_H =  1
+        self.SSB_number_of_beams_V =  1
+        self.SSB_number_of_beams = self.SSB_number_of_beams_H *self.SSB_number_of_beams_V
+      
+        # CSI-RS precoding
+        self.CSI_RS_precoder = "None"
+        self.CSI_RS_number_of_beams_H =  1
+        self.CSI_RS_number_of_beams_V =  1
+        self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V  
+        
+        
+        ### Construct UE enginering parameters       
+        return self.construct_data_frame()
+
+
+    def construct_scenario_3GPPTR38_811_Dense_Urban_SingleHAPS_TriReflector(self, site_deployment_obj):
+        """ This scenario has a single HAPS covering UMa grid"""
+        self.number_of_sectors_per_site = 3
+        self.bs_antenna_height_m = 1000
+        self.indoor = 0
+
+
+        # Read reference cell site locations, used to drive BS and/or UE deployments, and set them as cell site locations
+            # Note that not in all scenarios reference site locations equals to cell site locations
+        # here we only take position of the 1st cell cite which is expected to be central cell
+        self.cell_site_positions_m = site_deployment_obj.ref_cell_site_positions_m[:1,:]
+
+        # Calculate number of cell sites and cells
+        self.number_of_cell_sites = len(self.cell_site_positions_m)  # expected to be 1
+        self.number_of_cells = self.number_of_cell_sites * self.number_of_sectors_per_site
+
+        # Derive cell locations
+            # Note that striclity speaking this represents the location of the cell site where the BS that generetes the cell is located
+        self.cell_positions_m = np.repeat(self.cell_site_positions_m, repeats=self.number_of_sectors_per_site, axis=0)
+        self.cell_positions_m = np.hstack((self.cell_positions_m , np.ones((self.number_of_cells,1)) * self.bs_antenna_height_m))
+
+        # Set velocity
+        self.velocity_kmh = 0
+        self.calculate_bs_velocity_vectors()
+
+        # Type of rado unit and bbu
+
+        self.radio_unit_type = "5G-Macro-AAU-v1"
+        self.bbu_type = "5G-Macro-BBU-v1"          
+       
+        # Set relevant parameters
+        
+        self.fdd_tdd_ind	= "TDD"
+        self.subframe_assignment = "SA2"
+        self.FR = 1
+        self.subcarrier_per_PRB =  12
+        self.ofdm_symbols_in_slot = 14
+        
+        self.dl_freq_band = -1 #41
+        self.dl_earfcn = -1 #40936
+        self.ul_freq_band = -1 #41
+        self.ul_earfcn = -1 #40936
+        if (self.dl_freq_band != -1 and self.dl_earfcn != -1):
+            self.dl_carrier_frequency_GHz, self.ul_carrier_frequency_GHz, =  uaearfcn.earfcn2freq(self.freq_band,self.dl_earfcn)
+        else:
+            self.dl_carrier_frequency_GHz = 3.5
+            self.ul_carrier_frequency_GHz = 3.5
+      
+        self.dl_carrier_wavelength_m = 3e8/(self.dl_carrier_frequency_GHz*1e9)
+        self.dl_bandwidth_MHz = 100   
+        self.dl_subcarrier_spacing_kHz = 15 * 100/20
+        self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(20, 15)
+        self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
+        self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        
+        self.ul_carrier_wavelength_m = 3e8/(self.ul_carrier_frequency_GHz*1e9)
+        self.ul_bandwidth_MHz = 100
+        if (self.fdd_tdd_ind	== "TDD"):
+            if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
+                np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
+                exit(0) 
+        self.ul_subcarrier_spacing_kHz = 15 * 100/20
+        self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(20, 15)
+        self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(15)
+        self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(15)
+        
+        self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
+        self.BS_fast_channel_model = "Rician"        
+      
+        self.BS_tx_power_max_dBm = 55
+        self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
+
+        self.TX_number = 1 
+        self.RX_number = 1        
+        
+        self.CRS_ports = 1
+        self.CRS_RE_tx_power_dBm = -1
+        self.CRS_power_boosting_Pb = -1     
+        
+        
+        # Antenna patter model
+        self.antenna_pattern_model = "3GPPTR38_811" # The following model defines a reflector antenna
+    
+
+        # Reflector Parameters
+        ## Within 3GPPTR38_811, the driven parameter is 'a', defined as the radius of the aperture of the reflector antenna
+        ## 'a' is defined as multiple of the reflector design Wavelenght
+        ## Note that now the radius has been set using the carrier freqe wavelenght, 
+        ## but potentially can be any related to the design of the reflector.
+        self.reflector_aperture_radius_multipleWavelenght = 10
+        self.antenna_radius_ReflectorAperture_m = self.reflector_aperture_radius_multipleWavelenght * self.dl_carrier_wavelength_m
+        # Note that the total aperture is defined as the diameter of the reflect. 
+        # Often, in literature, this parameter is reffered as 'Reflector Diameter'
+        self.antenna_TotalAperture_geom_m = 2*self.antenna_radius_ReflectorAperture_m
+
+        self.reflector_aperture_efficiency = 1
+        
+        # Total Reflect Gain
+        antenna_config_max_gain_lin = self.reflector_aperture_efficiency *\
+                                      np.square((np.pi*self.antenna_TotalAperture_geom_m)/self.dl_carrier_wavelength_m).astype(float).item()  
+        self.antenna_config_max_gain_dBi = 10*np.log10(antenna_config_max_gain_lin)
+        del antenna_config_max_gain_lin
+        
+        # Antenna mechanical and electrical directions configuration
+        self.antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, 270])
+        self.antenna_config_hor_alpha_elec_bearing_deg = np.array([0, 0, 0])
+        
+        # 0 degrees is pointing to the sky; 90 degrees is pointing to the horizon  
+        downtilt_adjust_deg = 1.5 
+        mec_downtilt_deg = 180 - downtilt_adjust_deg
+        self.antenna_config_ver_beta_mec_downtilt_deg = mec_downtilt_deg
+        # The electricaltilt is relative, 0 degress is pointing along the panel upwards; 90 means pointing perpedicular to the array 
+        self.antenna_config_ver_beta_elec_downtilt_deg = 90
+        
+        self.antenna_config_gamma_mec_slant_deg = 0
+        self.antenna_config_gamma_elec_slant_deg = 0
+        
+        
+        # Number of antennas and polarization
+        self.antenna_config_Mg = 1
+        self.antenna_config_Ng = 1
+        self.antenna_config_M = 1 # number of rows (elements in vertical)
+        self.antenna_config_N = 1 # number of columns (elements in horizontal)
+        self.antenna_config_P = "single" # (“single” or “dual”)    
+        self.antenna_config_P_type = "V" # (“V” or “H” for single polarization. “VH” or “cross” for dual polarization.)
+        
+        
+        if self.antenna_config_P == 'single': P_num = 1
+        else: P_num = 2
+        self.antenna_config_number_of_elements = self.antenna_config_Mg * self.antenna_config_Ng * self.antenna_config_M * self.antenna_config_N * P_num
+       
+        
+        # The following parameters have to be defined for the sake of compliance with df_ep inputs
+        # And other part of the code (e.g. distance computation and LCS antenna computation)
+        # Value initialized with None will break the code
+        self.antenna_config_dgh_m = 0
+        self.antenna_config_dgv_m = 0
+        self.antenna_config_dh_m = 0
+        self.antenna_config_dv_m = 0
+        
+        self.antenna_config_hor_phi_3dB_deg = None
+        self.antenna_config_ver_theta_3dB_deg = None
+        self.antenna_config_hor_A_m_dB = None
+        self.antenna_config_ver_SLA_dB = None
+        
+        # SSB precoding 
+        self.SSB_precoder = "None" 
+        self.SSB_number_of_beams_H =  1
+        self.SSB_number_of_beams_V =  1
+        self.SSB_number_of_beams = self.SSB_number_of_beams_H *self.SSB_number_of_beams_V
+      
+        # CSI-RS precoding
+        self.CSI_RS_precoder = "None"
+        self.CSI_RS_number_of_beams_H =  1
+        self.CSI_RS_number_of_beams_V =  1
+        self.CSI_RS_number_of_beams = self.CSI_RS_number_of_beams_H *self.CSI_RS_number_of_beams_V  
+        
+        
+        ### Construct UE enginering parameters       
+        return self.construct_data_frame()
+    
+
+    
+    def construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G(self, site_deployment_obj):
+
+        # Constructed No Collocated 4G and 5G
+        df_4G5G = self.construct_scenario_3GPPTR38_901_4G5G(site_deployment_obj)
+    
+        # Constructed HAPS with UPA Antenna
+        df_haps_upa = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_UPA(site_deployment_obj).iloc[[0]]
+        
+        # Set dl_carrier_frequency_GHz in df_haps_upa
+        df_haps_upa['dl_carrier_frequency_GHz'] = 1.8
+
+        # Concatenate the DataFrames of different network layers
+        combined_df_ep = pd.concat([df_4G5G, df_haps_upa])
+        # Reset the index of the combined DataFrames
+        combined_df_ep = combined_df_ep.reset_index(drop=True)
+        
+        #####
+        combined_df_ep['ID'] = range(len(combined_df_ep)) 
+        # Set site ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID'] = max(df_4G5G['site_ID']) + 1
+        # Set name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'name'] = 'cell_%d' % (len(combined_df_ep) - 1)
+        # Set site name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_name'] = 'site_%d' % (max(df_4G5G['site_ID']) + 1)
+        # Set radio unit ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'radio_unit_ID'] = combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID']
+        # Set BBU ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'bbu_ID'] = len(combined_df_ep) - 1
+        # Set PCI for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'PCI'] = len(combined_df_ep) - 1
+
+        return combined_df_ep
+    
+    def construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G(self, site_deployment_obj):
+
+        # Constructed No Collocated 4G and 5G
+        df_4G_5G = self.construct_scenario_3GPPTR38_901_4G_5G(site_deployment_obj)
+    
+        # Constructed HAPS with UPA Antenna
+        df_haps_upa = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_UPA(site_deployment_obj).iloc[[0]]
+        
+        # Set dl_carrier_frequency_GHz in df_haps_upa
+        df_haps_upa['dl_carrier_frequency_GHz'] = 1.8
+
+        # Concatenate the DataFrames of different network layers
+        combined_df_ep = pd.concat([df_4G_5G, df_haps_upa])
+        # Reset the index of the combined DataFrames
+        combined_df_ep = combined_df_ep.reset_index(drop=True)
+        
+        #####
+        combined_df_ep['ID'] = range(len(combined_df_ep)) 
+        # Set site ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID'] = max(df_4G_5G['site_ID']) + 1
+        # Set name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'name'] = 'cell_%d' % (len(combined_df_ep) - 1)
+        # Set site name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_name'] = 'site_%d' % (max(df_4G_5G['site_ID']) + 1)
+        # Set radio unit ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'radio_unit_ID'] = combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID']
+        # Set BBU ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'bbu_ID'] = len(combined_df_ep) - 1
+        # Set PCI for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'PCI'] = len(combined_df_ep) - 1
+
+        return combined_df_ep
+    
+
+    def construct_scenario_3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G(self, site_deployment_obj):
+
+        # Constructed No Collocated 4G and 5G
+        df_4G5G = self.construct_scenario_3GPPTR38_901_4G5G(site_deployment_obj)
+    
+        # Constructed HAPS with UPA Antenna
+        df_haps_ref = self.construct_scenario_3GPPTR38_811_Dense_Urban_HAPS_Reflector(site_deployment_obj).iloc[[0]]
+        
+        # # Set dl_carrier_frequency_GHz in df_haps_ref
+        # df_haps_ref['dl_carrier_frequency_GHz'] = 1.8
+
+        # Concatenate the DataFrames of different network layers
+        combined_df_ep = pd.concat([df_4G5G, df_haps_ref])
+        # Reset the index of the combined DataFrames
+        combined_df_ep = combined_df_ep.reset_index(drop=True)
+        
+        #####
+        combined_df_ep['ID'] = range(len(combined_df_ep)) 
+        # Set site ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID'] = max(df_4G5G['site_ID']) + 1
+        # Set name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'name'] = 'cell_%d' % (len(combined_df_ep) - 1)
+        # Set site name for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'site_name'] = 'site_%d' % (max(df_4G5G['site_ID']) + 1)
+        # Set radio unit ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'radio_unit_ID'] = combined_df_ep.loc[combined_df_ep.index[-1], 'site_ID']
+        # Set BBU ID for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'bbu_ID'] = len(combined_df_ep) - 1
+        # Set PCI for HAPS
+        combined_df_ep.loc[combined_df_ep.index[-1], 'PCI'] = len(combined_df_ep) - 1
+
+        return combined_df_ep
+
+
+
+
+
+    
 
     def construct_scenario_3GPPTR38_811_Urban_NTN(self, site_deployment_obj):
         
@@ -3783,9 +4614,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Macro-AAU-v1"
-        self.bbu_type = "5G-Macro-BBU-v1"           
-       
+        self.bbu_type = "5G-Macro-BBU-v1"     
+
         # Set relevant parameters        
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -3823,7 +4655,7 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_811_Urban_NTN"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = 36 * self.dl_bandwidth_MHz + 30 # 36 dbW/MHz 
+        self.BS_tx_power_max_dBm = 36 * self.dl_bandwidth_MHz + 30 # 36 dbW/MHz 
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         self.min_BS_to_UE_2D_distance_m = 0 
         
@@ -3831,7 +4663,7 @@ class Network(Saveable):
         self.RX_number = 10           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1     
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -3885,7 +4717,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()  
     
-
     def construct_scenario_3GPPTR38_811_Desne_Urban_NTN(self, site_deployment_obj):
         
         self.number_of_sectors_per_site = 1
@@ -3915,9 +4746,10 @@ class Network(Saveable):
        
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Micro-AAU-v1"
-        self.bbu_type = "5G-Micro-BBU-v1"           
-       
+        self.bbu_type = "5G-Micro-BBU-v1"       
+
        # Set relevant parameters        
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -3955,7 +4787,7 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR38_811_Dense_Urban_NTN"
         self.BS_fast_channel_model = "Rician"        
       
-        self.BS_tx_power_dBm = tools.mW_to_dBm(tools.dBm_to_mW(36) * self.dl_bandwidth_MHz * 1000) # 36 dbW/MHz 
+        self.BS_tx_power_max_dBm = tools.mW_to_dBm(tools.dBm_to_mW(36) * self.dl_bandwidth_MHz * 1000) # 36 dbW/MHz 
         self.BS_noise_figure_dB = 5 #Taken from ITU UMa 
         self.min_BS_to_UE_2D_distance_m = 0 
         
@@ -3963,7 +4795,7 @@ class Network(Saveable):
         self.RX_number = 10     
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR38_901" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -4017,7 +4849,6 @@ class Network(Saveable):
         ### Construct UE enginering parameters       
         return self.construct_data_frame()          
 
-
     def construct_scenario_3GPPTR36_777_UMa_AV(self, site_deployment_obj):
        
         self.number_of_sectors_per_site = 3
@@ -4048,8 +4879,9 @@ class Network(Saveable):
         # Type of rado unit and bbu
         self.radio_unit_type = "5G-Macro-AAU-v1"
         self.bbu_type = "5G-Macro-BBU-v1"           
-       
+
         # Set relevant parameters
+        
         self.fdd_tdd_ind	= "TDD"
         self.subframe_assignment = "SA2"
         self.FR = 1
@@ -4087,14 +4919,14 @@ class Network(Saveable):
         self.BS_propagation_model = "3GPPTR36_777_UMa_AV"
         self.BS_fast_channel_model = "Rician"         
     
-        self.BS_tx_power_dBm = 46 
+        self.BS_tx_power_max_dBm = 46 
         self.BS_noise_figure_dB = 5
         
         self.TX_number = 1 
         self.RX_number = 1           
         
         self.CRS_ports = 1
-        self.CRS_RE_tx_power_dBm = -1
+        
         self.CRS_power_boosting_Pb = -1       
         
         self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -4147,8 +4979,7 @@ class Network(Saveable):
      
         ### Construct UE enginering parameters
         return self.construct_data_frame()  
-
-
+      
     def construct_scenario_3GPPTR36_777_UMi_AV(self, site_deployment_obj):
        
        self.number_of_sectors_per_site = 3
@@ -4178,9 +5009,10 @@ class Network(Saveable):
        
        # Type of rado unit and bbu
        self.radio_unit_type = "5G-Micro-AAU-v1"
-       self.bbu_type = "5G-Micro-BBU-v1"          
+       self.bbu_type = "5G-Micro-BBU-v1"     
        
        # Set relevant parameters
+       
        self.fdd_tdd_ind	= "TDD"
        self.subframe_assignment = "SA2"
        self.FR = 1
@@ -4218,14 +5050,14 @@ class Network(Saveable):
        self.BS_propagation_model = "3GPPTR36_777_UMi_AV"
        self.BS_fast_channel_model = "Rician"       
 
-       self.BS_tx_power_dBm = 41 
+       self.BS_tx_power_max_dBm = 41 
        self.BS_noise_figure_dB = 5
        
        self.TX_number = 1 
        self.RX_number = 1          
        
        self.CRS_ports = 1
-       self.CRS_RE_tx_power_dBm = -1
+       
        self.CRS_power_boosting_Pb = -1      
        
        self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -4284,8 +5116,6 @@ class Network(Saveable):
         
         # Initialize an empty DataFrame to store the concatenated result
         combined_df_ep = pd.DataFrame()
-        
-        offset = 0
         for index in range(0,len(carrier_frequencies_GHz)) : # Loop over the multiple network layers to create
         
             self.number_of_sectors_per_site = 3
@@ -4315,9 +5145,10 @@ class Network(Saveable):
        
             # Type of rado unit and bbu
             self.radio_unit_type = "4G-Macro-RRU-v1"
-            self.bbu_type = "4G-Macro-BBU-v1"            
-           
+            self.bbu_type = "4G-Macro-BBU-v1"      
+
             # Set relevant parameters
+            
             self.fdd_tdd_ind	= "TDD"
             self.subframe_assignment = "SA2"
             self.FR = 1
@@ -4355,14 +5186,14 @@ class Network(Saveable):
             self.BS_propagation_model = "ITU_R_M2135_UMa"
             self.BS_fast_channel_model = "Rician"            
      
-            self.BS_tx_power_dBm = 49 #We substract here the feeder loss
+            self.BS_tx_power_max_dBm = 49 #We substract here the feeder loss
             self.BS_noise_figure_dB = 5
 
             self.TX_number = 1 
             self.RX_number = 1   
             
             self.CRS_ports = 1
-            self.CRS_RE_tx_power_dBm = -1
+            
             self.CRS_power_boosting_Pb = -1      
             
             self.antenna_pattern_model = "3GPPTR36_814_UMa" # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
@@ -4421,29 +5252,46 @@ class Network(Saveable):
             
             # Concatenate the DataFrames of different network layers
             combined_df_ep = pd.concat([combined_df_ep, df_ep])
-            
-            # Update offsetto make sure that cell ID and stuff are coherent
-            offset += self.number_of_cells
-               
+
+        # Set necessary values to make the identifiers of the different layers coherent
+            # Every layer is built with the same site grid, so the values below are common to all of them
+        layers = len(carrier_frequencies_GHz)
+        number_of_cell_sites_per_layer = self.number_of_cell_sites
+        sectors_per_site = self.number_of_sectors_per_site
+
+        # Replace the values of the necessary columns to create a coherent scenario
+            # Note that construct_data_frame() numbers every layer from 0, so without this the layers would share identifiers
+        combined_df_ep['ID'] = range(len(combined_df_ep))
+        combined_df_ep['name'] = [ 'cell_%d'%(x) for x in range(len(combined_df_ep))]
+        combined_df_ep['site_ID'] = np.tile(np.repeat(np.arange(0,number_of_cell_sites_per_layer), repeats=sectors_per_site, axis=0), layers) # The cells of all the layers are sitting in the same sites
+        combined_df_ep['site_name'] = ['site_%d' % x for x in combined_df_ep['site_ID']]
+        combined_df_ep['radio_unit_ID'] = np.repeat(np.arange(0,layers*number_of_cell_sites_per_layer), repeats=sectors_per_site, axis=0) # Each layer is served by its own radio unit, as a 4G-Macro-RRU-v1 carries a single carrier
+        combined_df_ep['bbu_ID'] = range(len(combined_df_ep))
+        combined_df_ep['PCI'] = range(len(combined_df_ep))
+
         # Reset the index of the combined DataFrame
         combined_df_ep = combined_df_ep.reset_index(drop=True)
-        
+
         return combined_df_ep
-
-
+   
     def construct_scenario_ITU_R_M2135_UMa_Umi_colocated_multilayer(self, site_deployment_obj):
        
        ### NOTE that this is considered as a UMa layout to next modules
-    
+        
        # Set necessary values to drive the construction of the scenario
+       layers = 2
        number_of_cells_per_layer = 57
-              
-       # Initialize DataFrame with ITU_R_M2135_UMa deployment 
+       number_of_cell_sites_per_layer = 19
+       sectors_per_site = 3
+
+       # Initialize DataFrame with ITU_R_M2135_UMa deployment
+
        df_ep_UMa = self.construct_scenario_ITU_R_M2135_UMa(site_deployment_obj)
        
        # Initialize DataFrame with ITU_R_M2135_UMi deployment
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
+       
        site_deployment_obj.isd_m = 200
        site_deployment_obj.grid_resol_m = (int)(5)       
        df_ep_UMi = self.construct_scenario_ITU_R_M2135_UMi(site_deployment_obj)  
@@ -4454,21 +5302,22 @@ class Network(Saveable):
        combined_df_ep = pd.concat([df_ep_UMa, df_ep_UMi])    
        
        # Replace the values of the necessary columns to create a coherent scenario
-       combined_df_ep['ID'] = range(len(combined_df_ep)) 
-       combined_df_ep['name'] = [ 'cell_%d'%(x) for x in range(len(combined_df_ep))]     
-       combined_df_ep['PCI'] = range(len(combined_df_ep))      
-     
+       combined_df_ep['ID'] = range(len(combined_df_ep))
+       combined_df_ep['name'] = [ 'cell_%d'%(x) for x in range(len(combined_df_ep))]
+       combined_df_ep['PCI'] = range(len(combined_df_ep))
+       combined_df_ep['radio_unit_ID'] = np.repeat(np.arange(0,layers*number_of_cell_sites_per_layer), repeats=sectors_per_site, axis=0) # Each layer is served by its own radio unit, as a 4G-Macro-RRU-v1 carries a single carrier
+       combined_df_ep['bbu_ID'] = range(len(combined_df_ep))
+
        combined_df_ep.iloc[-number_of_cells_per_layer:, combined_df_ep.columns.isin(['position_x_m', 'position_y_m'])] =\
            combined_df_ep.iloc[:number_of_cells_per_layer, combined_df_ep.columns.isin(['position_x_m', 'position_y_m'])]
-       
+
        combined_df_ep['radio_unit_type'] = [ "4G-Macro-RRU-v1" for x in range(len(combined_df_ep))] 
        combined_df_ep['bbu_type'] = [ "4G-Macro-BBU-v1" for x in range(len(combined_df_ep))] 
        
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)      
-       
-       return combined_df_ep     
 
+       return combined_df_ep     
 
     def construct_scenario_ITU_R_M2135_UMa_Umi_noncolocated_multilayer(self, site_deployment_obj):
        
@@ -4479,12 +5328,17 @@ class Network(Saveable):
        number_of_sectors_per_site = 3
        
        # Initialize DataFrame with ITU_R_M2135_UMa deployment 
+      
        df_ep_UMa = self.construct_scenario_ITU_R_M2135_UMa(site_deployment_obj)
        
        # Initialize DataFrame with ITU_R_M2135_UMi deployment
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
-       site_deployment_UMi_obj = sites.Site(True,"ITU_R_M2135_UMi")
+           
+       site_deployment_UMi_obj =\
+            sites.Site(
+                True,
+                "ITU_R_M2135_UMi")
        site_deployment_UMi_obj.process()  
                 
        df_ep_UMi = self.construct_scenario_ITU_R_M2135_UMi(site_deployment_UMi_obj)  
@@ -4505,40 +5359,51 @@ class Network(Saveable):
                   
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
-       
+
        return combined_df_ep   
           
     
     def construct_scenario_3GPPTR38_901_4G(self, site_deployment_obj):
        
        ### This scenario has 4G (2GHz) in UMa grid 
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46
+       
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46
        df_ep_UMa['BS_propagation_model'] = "3GPPTR38_901_UMa"
        
        return df_ep_UMa   
     
-
     def construct_scenario_3GPPTR38_901_5G(self, site_deployment_obj):
        
        ### This scenario has 5G (3.5GHz) in UMa grid 
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 49  
+              
+       df_ep_UMa['BS_tx_power_max_dBm'] = 49  
        df_ep_UMa['BS_propagation_model'] = "3GPPTR38_901_UMa"
+       
+       df_ep_UMa['BS_tx_power_max_dBm'] = 49       
        
        return df_ep_UMa  
 
-
     def construct_scenario_3GPPTR38_901_6G(self, site_deployment_obj):
        
-       ### This scenario has 6G (10GHz) in UMa grid       
+       ### This scenario has 6G (10GHz) in UMa grid 
+       
+       # site_deployment_UPi_obj =\
+       #      sites.Site(
+       #          True,
+       #          "3GPPTR38_901_UPi_fr3_lsc")
+       # site_deployment_UPi_obj.process()        
+      
        df_ep_UPi = self.construct_scenario_3GPPTR38_901_UPi_fr3_large_scale(site_deployment_obj)
-       df_ep_UPi['BS_tx_power_dBm'] = 41   
+       
+       df_ep_UPi['BS_tx_power_max_dBm'] = 41   
        df_ep_UPi['BS_propagation_model'] = "3GPPTR38_901_UMa"
        
        return df_ep_UPi         
     
-
     def construct_scenario_3GPPTR38_901_4G5G(self, site_deployment_obj):
        
        ### This scenario has colocated 4G (2GHz) and 5G (3.5GHz) sites in UMa grid 
@@ -4547,22 +5412,26 @@ class Network(Saveable):
        
        # Set necessary values to drive the construction of the scenario
        layers = 2
-       number_of_cell_sites_per_layer = 19
+       number_of_cell_sites_per_layer = site_deployment_obj.ref_number_of_cell_sites
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment for 4G cells 
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46  
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46  
        
        # Initialize DataFrame with 3GPPTR38_901_UMi deployment for 5G cells
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMa_obj = sites.Site(True, "3GPPTR38_901_UMa_C_band_lsc")
+       site_deployment_UMa_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMa_C_band_lsc")
        site_deployment_UMa_obj.process()  
         
        df_ep_UMa_C_band = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale(site_deployment_UMa_obj)  
-       df_ep_UMa_C_band['BS_tx_power_dBm'] = 49  
+       df_ep_UMa_C_band['BS_tx_power_max_dBm'] = 49  
        
        # Concatenate the DataFrames of different network layers
        combined_df_ep = pd.concat([df_ep_UMa, df_ep_UMa_C_band])  
@@ -4583,10 +5452,11 @@ class Network(Saveable):
                      
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
-       
-       return combined_df_ep 
-      
 
+       return combined_df_ep 
+
+
+      
     def construct_scenario_3GPPTR38_901_4G_5G(self, site_deployment_obj):
        
        ### This scenario has noncolocated 4G (2GHz) and 5G (3.5GHz) sites in UMa and UMi grids, respectively 
@@ -4599,18 +5469,22 @@ class Network(Saveable):
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment for 4G cells
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46 
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46 
        
        # Initialize DataFrame with 3GPPTR38_901_UMi deployment for 5G cells
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMi_obj = sites.Site(True, "3GPPTR38_901_UMi_C_band_lsc")    
+       site_deployment_UMi_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMi_C_band_lsc")
        site_deployment_UMi_obj.process()  
         
        df_ep_UMi_C_band = self.construct_scenario_3GPPTR38_901_UMi_C_band_large_scale(site_deployment_UMi_obj)  
-       df_ep_UMi_C_band['BS_tx_power_dBm'] = 44        
+       df_ep_UMi_C_band['BS_tx_power_max_dBm'] = 44        
        
        # Concatenate the DataFrames of different network layers
        combined_df_ep = pd.concat([df_ep_UMa, df_ep_UMi_C_band])  
@@ -4628,9 +5502,8 @@ class Network(Saveable):
                      
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
-       
-       return combined_df_ep
-     
+
+       return combined_df_ep     
    
     def construct_scenario_3GPPTR38_901_4G_5G2(self, site_deployment_obj):
        
@@ -4644,18 +5517,22 @@ class Network(Saveable):
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment 
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46        
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46        
        
        # Initialize DataFrame with 3GPPTR38_901_UMi deployment
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMi_obj = sites.Site(True, "3GPPTR38_901_UMi_C_band_lsc")
+       site_deployment_UMi_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMi_C_band_lsc")
        site_deployment_UMi_obj.process()  
         
        df_ep_UMa_C_band = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale(site_deployment_UMi_obj) 
-       df_ep_UMa_C_band['BS_tx_power_dBm'] = 49  
+       df_ep_UMa_C_band['BS_tx_power_max_dBm'] = 49  
        
        # Concatenate the DataFrames of different network layers
        combined_df_ep = pd.concat([df_ep_UMa, df_ep_UMa_C_band])  
@@ -4673,10 +5550,9 @@ class Network(Saveable):
                      
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
-       
+
        return combined_df_ep      
    
-
     def construct_scenario_3GPPTR38_901_4G_5G6G(self, site_deployment_obj):
        
        ### This scenario has noncolocated 4G (2GHz) and 5G (3.5GHz) sites in UMa and UMi grids, respectively, and a colocated 6G (10GHz) with the 5G 
@@ -4689,23 +5565,27 @@ class Network(Saveable):
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment for 4G cells
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46         
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46         
        
        # Initialize DataFrame with 3GPPTR38_901_UMi deployment for 5G and 6G cells
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMi_obj = sites.Site(True, "3GPPTR38_901_UMi_C_band_lsc")
+       site_deployment_UMi_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMi_C_band_lsc")
        site_deployment_UMi_obj.process()  
         
        # 5G cells
        df_ep_UMi_C_band = self.construct_scenario_3GPPTR38_901_UMi_C_band_large_scale(site_deployment_UMi_obj)  
-       df_ep_UMi_C_band['BS_tx_power_dBm'] = 44  
+       df_ep_UMi_C_band['BS_tx_power_max_dBm'] = 44  
        
        # 6G cells
        df_ep_UMi_F3 = self.construct_scenario_3GPPTR38_901_UMi_fr3_large_scale(site_deployment_obj)
-       df_ep_UMi_F3['BS_tx_power_dBm'] = 44  
+       df_ep_UMi_F3['BS_tx_power_max_dBm'] = 44  
        #df_ep_UMi_F3 = df_ep_UMi_F3[(df_ep_UMi_F3['site_ID'] >= 1) & (df_ep_UMi_F3['site_ID'] <= 7)]
        
        # Concatenate the DataFrames of different network layers
@@ -4715,13 +5595,19 @@ class Network(Saveable):
        combined_df_ep['ID'] = range(len(combined_df_ep)) 
        array1 =  np.repeat(np.arange(0,(layers-1)*number_of_cell_sites_per_layer), repeats=sectors_per_site, axis=0)
        combined_df_ep['site_ID'] = np.concatenate((array1, array1[sectors_per_site*number_of_cell_sites_per_layer : ])) # 4G and 5G cells are sitting in different sites, while 6G sites are sitting in the same sites as 5G cells
+       #combined_df_ep['site_ID'] = np.concatenate((array1, array1[sectors_per_site*number_of_cell_sites_per_layer+1*3 : sectors_per_site*number_of_cell_sites_per_layer+8*3])) # 4G and 5G cells are sitting in different sites, while 6G sites are sitting in the same sites as 5G cells
        combined_df_ep['name'] = [ 'cell_%d'%(x) for x in range(len(combined_df_ep))] 
        combined_df_ep['site_name'] = ['site_%d' % x for x in combined_df_ep['site_ID']]
        combined_df_ep['radio_unit_ID'] = combined_df_ep['site_ID']      
        combined_df_ep['bbu_ID'] = range(len(combined_df_ep))      
        combined_df_ep['PCI'] = range(len(combined_df_ep))   
        
-       combined_df_ep.loc[np.logical_or(combined_df_ep['radio_unit_type'] == "5G-Micro-AAU-v1",combined_df_ep['radio_unit_type'] == "6G-Micro-AAU-v1"), 'radio_unit_type'] = "5G6G-Micro-AAU-v1"
+       combined_df_ep.loc[
+           np.logical_or(
+                combined_df_ep['radio_unit_type'] == "5G-Micro-AAU-v1",
+                combined_df_ep['radio_unit_type'] == "6G-Micro-AAU-v1"
+            ), 'radio_unit_type'
+        ] = "5G6G-Micro-AAU-v1"
        
        combined_df_ep.loc[combined_df_ep['bbu_type'] == "5G-Micro-BBU-v1", 'bbu_type'] = "6G-Micro-BBU-v1"
        
@@ -4729,10 +5615,9 @@ class Network(Saveable):
    
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
-       
+
        return combined_df_ep   
-
-
+   
     def construct_scenario_3GPPTR38_901_4G_5G_6G(self, site_deployment_obj, ue_hotspot_deployment_obj):
        
        ### This scenario has noncolocated 4G (2GHz) and 5G (3.5GHz) and  6G (10GHz) sites in UMa, UMi and UPi grids, respectively 
@@ -4745,32 +5630,41 @@ class Network(Saveable):
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment for 4G cells
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46
        
        # Initialize DataFrame with ITU_R_M2135_UMi deployment for 5G cells
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMi_obj = sites.Site(True, "3GPPTR38_901_UMi_C_band_lsc")
+       site_deployment_UMi_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMi_C_band_lsc")
        site_deployment_UMi_obj.process()  
         
        # 5G cells
        df_ep_UMi_C_band = self.construct_scenario_3GPPTR38_901_UMi_C_band_large_scale(site_deployment_UMi_obj) 
-       df_ep_UMi_C_band['BS_tx_power_dBm'] = 44
+       df_ep_UMi_C_band['BS_tx_power_max_dBm'] = 44
        
        # 6G cells   
            #If the playground has hotspots, the noncolocated 6G cells are deployed on top of the hotspots. Otherwise, they are deployed in UPi grid
        if ue_hotspot_deployment_obj.number_of_hotspots > 0 :
            df_ep_UPi_F3 = self.construct_scenario_3GPPTR38_901_UPi_fr3_large_scale(ue_hotspot_deployment_obj)  
        else: 
+           
            #Initialize DataFrame with 3GPPTR38_901_UPi_fr3_lsc deployment for 6G cells
-           site_deployment_UPi_obj = sites.Site(True, "3GPPTR38_901_UPi_fr3_lsc")
+           site_deployment_UPi_obj =\
+                sites.Site(
+                    True,
+                    "3GPPTR38_901_UPi_fr3_lsc")
            site_deployment_UPi_obj.process()     
            
            df_ep_UPi_F3 = self.construct_scenario_3GPPTR38_901_UPi_fr3_large_scale(site_deployment_UPi_obj)  
-       
-       df_ep_UPi_F3['BS_tx_power_dBm'] = 41       
+        
+       df_ep_UPi_F3['BS_tx_power_max_dBm'] = 41       
+       #df_ep_UPi_F3 = df_ep_UPi_F3[(df_ep_UPi_F3['site_ID'] >= 1) & (df_ep_UPi_F3['site_ID'] <= 7)]
        
        # Concatenate the DataFrames of different network layers
        combined_df_ep = pd.concat([df_ep_UMa, df_ep_UMi_C_band, df_ep_UPi_F3])  
@@ -4804,18 +5698,21 @@ class Network(Saveable):
        sectors_per_site = 3
        
        # Initialize DataFrame with 3GPPTR38_901_UMa deployment 
+      
        df_ep_UMa = self.construct_scenario_3GPPTR38_901_UMa_2GHz_large_scale_calibration(site_deployment_obj)
-       df_ep_UMa['BS_tx_power_dBm'] = 46  
+       df_ep_UMa['BS_tx_power_max_dBm'] = 46  
        
        # Initialize DataFrame with 3GPPTR38_901_UMi deployment
            # We change the site_deployment_obj parameters to accomodate for UMi and change them back
            # and change them back to make sure that the UMa variables are the ones stored in the object. This allow to drive the UE deployment over the UMa, and not the UMi grid  
 
-       site_deployment_UMa_obj = sites.Site(True, "3GPPTR38_901_UMa_C_band_lsc")
+       site_deployment_UMa_obj =\
+            sites.Site(
+                True,
+                "3GPPTR38_901_UMa_C_band_lsc")
        site_deployment_UMa_obj.process()  
         
-       #df_ep_UMa_C_band = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale_calibration(site_deployment_UMa_obj)  
-       df_ep_UMa_C_band = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale(site_deployment_UMa_obj)         
+       df_ep_UMa_C_band = self.construct_scenario_3GPPTR38_901_UMa_C_band_large_scale_calibration(site_deployment_UMa_obj)  
        df_ep_UMa_C_band['BS_tx_power_dBm'] = 49
        
        # Concatenate the DataFrames of different network layers
@@ -4834,12 +5731,12 @@ class Network(Saveable):
        
        combined_df_ep['BS_propagation_model'] = "3GPPTR38_901_UMa"
        
+                     
        # Reset the index of the combined DataFrame
        combined_df_ep = combined_df_ep.reset_index(drop=True)
        
        return combined_df_ep 
     
-
     def construct_scenario_dataset(self, site_deployment_obj):
 
         # Since there is a dataset available, no need to construct the scenario
@@ -4870,6 +5767,9 @@ class Network(Saveable):
         print(f"Loading 'cell_deployment' dataset from file: {cell_deployment_dataset_full_file_path}")
         deployment_dataset_df = pd.read_csv(cell_deployment_dataset_full_file_path, low_memory=False, sep=',', keep_default_na=False, na_values=na_values)
 
+        #self.bs_antenna_height_m = 25
+        #self.indoor = 0
+
         # Unique site positions
         unique_sites = deployment_dataset_df.drop_duplicates(subset='site_ID')
         self.cell_site_positions_m = unique_sites[['position_x_m', 'position_y_m']].to_numpy()
@@ -4880,6 +5780,94 @@ class Network(Saveable):
         # Calculate number of cell sites and cells
         self.number_of_cell_sites = len(self.cell_site_positions_m)
         self.number_of_cells = deployment_dataset_df.shape[0]
+
+        # Type of rado unit and bbu
+        #self.radio_unit_type = "4G-Macro-RRU-v1"
+        #self.bbu_type = "4G-Macro-BBU-v1"
+
+        # Set relevant parameters
+        #self.fdd_tdd_ind = "TDD"
+        #self.subframe_assignment = "SA2"
+        #self.FR = 1
+        #self.subcarrier_per_PRB = 12
+        #self.ofdm_symbols_in_slot = 14
+
+        #self.dl_freq_band = -1  # 41
+        #self.dl_earfcn = -1  # 40936
+        #self.ul_freq_band = -1  # 41
+        #self.ul_earfcn = -1  # 40936
+        #if (self.dl_freq_band != -1 and self.dl_earfcn != -1):
+        #    self.dl_carrier_frequency_GHz, self.ul_carrier_frequency_GHz, = uaearfcn.earfcn2freq(self.freq_band,
+        #self.dl_earfcn)
+        #else:
+        #    self.dl_carrier_frequency_GHz = 2
+        #    self.ul_carrier_frequency_GHz = 2
+
+        #self.dl_carrier_wavelength_m = 3e8 / (self.dl_carrier_frequency_GHz * 1e9)
+        #self.dl_bandwidth_MHz = 20
+        #self.dl_subcarrier_spacing_kHz = 15
+        #self.dl_PRBs_available = tools_carrier.bandwidth_to_PRBs(self.dl_bandwidth_MHz,
+        #                                                         self.dl_subcarrier_spacing_kHz)
+        #self.dl_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.dl_subcarrier_spacing_kHz)
+        #self.dl_control_channel_overhead = tools_carrier.control_channel_overhead(self.dl_subcarrier_spacing_kHz)
+
+        #self.ul_carrier_wavelength_m = 3e8 / (self.ul_carrier_frequency_GHz * 1e9)
+        #self.ul_bandwidth_MHz = 20
+        #if (self.fdd_tdd_ind == "TDD"):
+        #    if (self.dl_bandwidth_MHz != self.ul_bandwidth_MHz):
+        #        np.disp('Error: DL and UL bandwidths have to be the same if we are in TDD mode')
+        #        exit(0)
+        #self.ul_subcarrier_spacing_kHz = 15
+        #self.ul_available_PRBs = tools_carrier.bandwidth_to_PRBs(self.ul_bandwidth_MHz,
+        #                                                         self.ul_subcarrier_spacing_kHz)
+        #self.ul_ofdm_symbol_duration_us = tools_carrier.ofdm_symbol_duration(self.ul_subcarrier_spacing_kHz)
+        #self.ul_control_channel_overhead = tools_carrier.control_channel_overhead(self.ul_subcarrier_spacing_kHz)
+
+        #self.BS_propagation_model = "ITU_R_M2135_UMa"
+        #self.BS_fast_channel_model = "Rician"
+
+        #self.BS_tx_power_max_dBm = 49  # We substract here the feeder loss
+        #self.BS_noise_figure_dB = 5
+        #self.min_BS_to_UE_2D_distance_m = 25
+
+        #self.CRS_ports = 1,
+        #,
+        #self.CRS_power_boosting_Pb = -1,
+
+        #self.antenna_pattern_model = "3GPPTR36_814_UMa"  # Note that 3GPP TR36_814 and 3GPP TR38_901 follow the same model but with different parameters
+
+        # Array in TR 36.814
+        #self.antenna_config_max_gain_dBi = 17
+        #self.antenna_config_hor_phi_3dB_deg = 70
+        #self.antenna_config_hor_A_m_dB = 20
+        #self.antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, -90])
+        #self.antenna_config_hor_alpha_elec_bearing_deg = np.array([0, 0, 0])
+
+        #self.antenna_config_ver_theta_3dB_deg = 15
+        #self.antenna_config_ver_SLA_dB = deployment_dataset_df.loc[0, 'antenna_config_ver_SLA_dB']
+        #self.antenna_config_ver_beta_mec_downtilt_deg = 90  # 0 degrees is pointing to the sky; 90 degrees is pointing to the horizon
+        #self.antenna_config_ver_beta_elec_downtilt_deg = 90 + 12
+
+                #   self.antenna_config_gamma_mec_slant_deg = 0
+        #   self.antenna_config_gamma_elec_slant_deg = 0
+
+        #self.antenna_config_Mg = deployment_dataset_df.loc[0, 'antenna_config_Mg']
+        #self.antenna_config_Ng = deployment_dataset_df.loc[0, 'antenna_config_Ng']
+        #self.antenna_config_M = deployment_dataset_df.loc[0, 'antenna_config_M']
+        #self.antenna_config_N = deployment_dataset_df.loc[0, 'antenna_config_N']
+        #self.antenna_config_P = deployment_dataset_df.loc[0, 'antenna_config_P']
+        #self.antenna_config_P_type = deployment_dataset_df.loc[0, 'antenna_config_P_type']
+
+        #if self.antenna_config_P == 'single':
+        #    P_num = 1
+        #else:
+        #    P_num = 2
+        #self.antenna_config_number_of_elements = self.antenna_config_Mg * self.antenna_config_Ng * self.antenna_config_M * self.antenna_config_N * P_num
+
+        #self.antenna_config_dgh_m = 0.5 * self.dl_carrier_wavelength_m
+        #self.antenna_config_dgv_m = 0.5 * self.dl_carrier_wavelength_m
+        #self.antenna_config_dh_m = 0.5 * self.dl_carrier_wavelength_m
+        #self.antenna_config_dv_m = 0.5 * self.dl_carrier_wavelength_m
 
         # SSB precoding
         self.SSB_precoder = deployment_dataset_df.loc[0, 'SSB_precoder']
@@ -4893,4 +5881,31 @@ class Network(Saveable):
         self.CSI_RS_number_of_beams_V = deployment_dataset_df.loc[0, 'CSI_RS_number_of_beams_V']
         self.CSI_RS_number_of_beams = deployment_dataset_df.loc[0, 'CSI_RS_number_of_beams']
 
+        # Create sectores
+        #self.sectors, self.sectors_gp = self.sectorized_geographical_areas(site_deployment_obj.hexagons,
+        #                                                                   self.cell_site_positions_m,
+        #                                                                   site_deployment_obj.isd_m,
+        #                                                                   self.antenna_config_hor_alpha_mec_bearing_deg)
+
         return deployment_dataset_df
+    
+    
+    
+    def _reset_attributes_hetNet(self, df_ep: pd.DataFrame) -> None:
+        """Reset all attributes set in the initialization function to None."""
+        # Iterate over all columns in the DataFrame and set the corresponding attributes in Giulia Network Object
+        for attr in df_ep.columns:
+            # 'name' is reserved by the Saveable base class: it holds this object's
+            # registry key ('Network'). A df_ep column named 'name' (the cell-name
+            # column) must not overwrite it, otherwise the Saveable registers with a
+            # None name and serializes as a stray 'null' entry (catalog, Saveable.get).
+            if attr == 'name':
+                continue
+            setattr(self, attr, None)
+               
+        # Set attributes based on the DataFrame columns
+        self.number_of_sectors_per_site = None
+        self.number_of_cell_sites = df_ep['site_ID'].unique().shape[0]
+        self.number_of_cells = df_ep['ID'].unique().shape[0]
+        
+        return 

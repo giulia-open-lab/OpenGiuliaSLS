@@ -4,10 +4,7 @@ Created on Tue Apr  4 14:13:46 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import time
@@ -22,6 +19,8 @@ from giulia.fs import results_file
 from giulia.tools import tools
 from giulia.tools.tools import log_calculations_time
 from giulia.outputs.saveable import Saveable
+
+from giulia.logger import warning, error
 
 
 class Fast_Fading_Gain(Saveable):
@@ -74,12 +73,15 @@ class Fast_Fading_Gain(Saveable):
         self.LoS_channel_coeff_bAnt_to_aAnt_complex: torch.Tensor = torch.tensor([], dtype=torch.chalf)
 
         # Dictionary to store results for each frequency layer
-        self.fading_results_per_frequency_layer_result: Dict[float, Dict[str, Any]] = {}
+        self.fading_results_per_frequency_layer_result: Dict[float|str, Dict[str, Any]] = {}
 
 
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["fading_results_per_frequency_layer_result"]
+        return []
 
     def process(self, rescheduling_us: int = -1) -> int:
         """
@@ -120,9 +122,16 @@ class Fast_Fading_Gain(Saveable):
         k_factor_bAnt_to_a_dB: np.ndarray = np.repeat(self.K_factor_b_to_a_dB, counts_ue_ant, axis=0)
 
         values_cell_ant, counts_cell_ant = np.unique(self.antenna_to_node_a_mapping, return_counts=True)
-        self.k_factor_bAnt_to_aAnt_dB: np.ndarray = np.repeat(k_factor_bAnt_to_a_dB, counts_cell_ant, axis=1)     
+        self.k_factor_bAnt_to_aAnt_dB: np.ndarray = np.repeat(k_factor_bAnt_to_a_dB, counts_cell_ant, axis=1)
+
+        # Process unique frequency layers
+        #dl_carrier_frequency_GHz_set: set = set(self.dl_carrier_frequency_GHz)
+        
+        #for dl_carrier_frequency_GHz in dl_carrier_frequency_GHz_set:
+        #    frequency_layer_info = self.time_frequency_resource_obj.dl_frequency_layer_info[dl_carrier_frequency_GHz]        
         
         # Determine what should be processed
+        
         """
         Logic Explanation:
         This logic is designed to handle two different data structures based on the preset type, each with its own trade-offs.
@@ -154,8 +163,20 @@ class Fast_Fading_Gain(Saveable):
         - In the single-matrix case, we process only the "all_freq" entry.
         - In the per-frequency-layer case, we efficiently process only the relevant frequency layers.
         """
+
+        # Old logic to extract relevant entries to process based on infering which preset is being used by looking at whether frequency layer info contains UE info, in particular "ues_in_frequency_mask"
+        # - The "all_freq" layer always contains UE info
+        # - The per frequency entries may or may not contain UE info, depending on the type of preset. For the standard preset they don't. 
+        # data = self.time_frequency_resource_obj.dl_frequency_layer_info
+        
+        # # Step 1: Filter out entries that do not contain "ues_in_frequency_mask"
+        # valid_entries = {k: v for k, v in data.items() if "ues_in_frequency_mask" in v}
+        
+        # # Step 2: Apply the exclusion rule for "all_freq"
+        # if len(valid_entries) > 1 and "all_freq" in valid_entries:
+        #     valid_entries.pop("all_freq")  # Remove "all_freq" if other entries exist
          
-        # Extract relevant entries to process based on a explicit indication of the preset being used. 
+        # New logic to extract relevant entries to process based on a explicit indication of the preset being used. 
             # Extract relevant data
         valid_entries = self.time_frequency_resource_obj.dl_frequency_layer_info.copy()
         
@@ -171,7 +192,8 @@ class Fast_Fading_Gain(Saveable):
         for dl_carrier_frequency_GHz, frequency_layer_info in valid_entries.items():
             
             # Identify cells and antennas associated with cells in the current frequency
-            available_PRBs_for_frequency: int = frequency_layer_info["available_PRBs"] 
+            max_available_PRBs_for_frequency: int = frequency_layer_info["max_available_PRBs"] 
+
             cells_in_frequency_mask: np.ndarray = frequency_layer_info["cells_in_frequency_mask"]
             cell_ants_in_frequency_mask: np.ndarray = frequency_layer_info["cell_ants_in_frequency_mask"]
             num_cell_ants_in_frequency: int = frequency_layer_info["num_cell_ants"]
@@ -185,28 +207,45 @@ class Fast_Fading_Gain(Saveable):
             k_factor_bAnt_to_aAnt_dB: np.ndarray = self.k_factor_bAnt_to_aAnt_dB[ue_ants_in_frequency_mask, :][:, cell_ants_in_frequency_mask]
                 
             # Initialize tensors for fast fading and LoS coefficients
-            fast_fading_channel_coeff_bAnt_to_aAnt_complex = torch.zeros((available_PRBs_for_frequency, num_ue_ants_in_frequency, num_cell_ants_in_frequency),dtype=torch.chalf,device=self.device)
+            fast_fading_channel_coeff_bAnt_to_aAnt_complex = torch.zeros(
+                (max_available_PRBs_for_frequency, num_ue_ants_in_frequency, num_cell_ants_in_frequency),
+                dtype=torch.chalf,
+                device=self.device
+            )
         
-            # Process each channel model
-            bs_fast_channel_model_set: set = set(self.bs_fast_channel_models)
-            for bs_fast_channel_model in bs_fast_channel_model_set:
-                # Mask for cells with the current channel model
-                mask_cell: np.ndarray = self.bs_fast_channel_models[cells_in_frequency_mask] == bs_fast_channel_model
-                mask_cell_antennas : np.ndarray = np.repeat(mask_cell, counts_cell_ant[cells_in_frequency_mask], axis=0)
+            # Compute fast fading
+            if self.simulation_config_obj.debug_no_randomness:
+                # If randomness is disabled, set fast fading to all ones (no fading) 
+                # Note that torch.ones_like() creates 1 + 0j values
+                fast_fading_channel_coeff_bAnt_to_aAnt_complex = torch.ones_like(fast_fading_channel_coeff_bAnt_to_aAnt_complex, device=self.device)
+                
+            else: 
+                # Process each channel model
+                bs_fast_channel_model_set: set = set(self.bs_fast_channel_models)
+                for bs_fast_channel_model in bs_fast_channel_model_set:
+                    # Mask for cells with the current channel model
+                    mask_cell: np.ndarray = self.bs_fast_channel_models[cells_in_frequency_mask] == bs_fast_channel_model
+                    mask_cell_antennas : np.ndarray = np.repeat(mask_cell, counts_cell_ant[cells_in_frequency_mask], axis=0)
 
-                # Calculate fast fading
-                if bs_fast_channel_model == "Rician":
-                    fast_fading_channel_coeff_bAnt_to_aAnt_complex[:, :, mask_cell_antennas] = \
-                        self.Rician_fading_far_field_approx_torch(available_PRBs_for_frequency, k_factor_bAnt_to_aAnt_dB, array_steering_vector_bAnt_to_aAnt_complex)
-                elif bs_fast_channel_model == "Rayleigh":
-                    fast_fading_channel_coeff_bAnt_to_aAnt_complex[:, :, mask_cell_antennas] = \
-                        self.Rayleigh_fading(available_PRBs_for_frequency,array_steering_vector_bAnt_to_aAnt_complex.shape[1],array_steering_vector_bAnt_to_aAnt_complex.shape[2])
+                    # Calculate fast fading
+                    if bs_fast_channel_model == "Rician":
+                        fast_fading_channel_coeff_bAnt_to_aAnt_complex[:, :, mask_cell_antennas] = \
+                            self.Rician_fading_far_field_approx_torch(
+                                max_available_PRBs_for_frequency, k_factor_bAnt_to_aAnt_dB, array_steering_vector_bAnt_to_aAnt_complex
+                            )
+                    elif bs_fast_channel_model == "Rayleigh":
+                        fast_fading_channel_coeff_bAnt_to_aAnt_complex[:, :, mask_cell_antennas] = \
+                            self.Rayleigh_fading_torch(
+                                max_available_PRBs_for_frequency,
+                                array_steering_vector_bAnt_to_aAnt_complex.shape[1],
+                                array_steering_vector_bAnt_to_aAnt_complex.shape[2]
+                            )
         
 
             # Store results
-            self.fading_results_per_frequency_layer_result[dl_carrier_frequency_GHz] = copy.deepcopy(self.time_frequency_resource_obj.dl_frequency_layer_info[dl_carrier_frequency_GHz])
-            if "RSRP_ue_to_cell_dBm" in self.fading_results_per_frequency_layer_result[dl_carrier_frequency_GHz]:
-                del self.fading_results_per_frequency_layer_result[dl_carrier_frequency_GHz]["RSRP_ue_to_cell_dBm"]
+            self.fading_results_per_frequency_layer_result[dl_carrier_frequency_GHz] = {} #copy.deepcopy(self.time_frequency_resource_obj.dl_frequency_layer_info[dl_carrier_frequency_GHz])
+            
+            # Add the calculated fast fading coefficients to the results dictionary for the current frequency layer
             self.fading_results_per_frequency_layer_result[dl_carrier_frequency_GHz].update({    
                 "fast_fading_channel_coeff_bAnt_to_aAnt_complex": fast_fading_channel_coeff_bAnt_to_aAnt_complex,
             })
@@ -224,48 +263,13 @@ class Fast_Fading_Gain(Saveable):
         
         return rescheduling_us
     
-
-    def Rician_fading(
-        self,
-        available_PRBs: int,
-        k_factor_bAnt_to_aAnt_dB: np.ndarray,
-        dl_carrier_wavelength_a_antennas_m: np.ndarray,
-        distances_bAnt_to_aAnt_3d_wraparound_m: np.ndarray,
-        array_factor_linear: np.ndarray,
-    ) -> np.ndarray:
-        """
-        Computes Rician fading using both LoS and NLoS components.
-    
-        Args:
-            available_PRBs: Number of physical resource blocks available.
-            k_factor_bAnt_to_aAnt_dB: K-factor matrix in dB for Rician fading.
-            dl_carrier_wavelength_a_antennas_m: Wavelengths at cell antennas.
-            distances_bAnt_to_aAnt_3d_wraparound_m: Distances between UE and cell antennas.
-            array_factor_linear: Array factor in linear scale.
-    
-        Returns:
-            A NumPy array representing the fast fading coefficients.
-        """
-        # Convert K-factor from dB to linear scale
-        K_factor: np.ndarray = tools.dBm_to_mW(k_factor_bAnt_to_aAnt_dB)
-    
-        # Calculate NLoS Rayleigh component
-        H_Rayleigh_fading: np.ndarray = self.Rayleigh_fading_parallel_thread(available_PRBs, k_factor_bAnt_to_aAnt_dB.shape[0], k_factor_bAnt_to_aAnt_dB.shape[1])
-    
-        # Calculate LoS deterministic component
-        phase_shifts_rad: np.ndarray = np.modf(distances_bAnt_to_aAnt_3d_wraparound_m / dl_carrier_wavelength_a_antennas_m[np.newaxis, :])[0]
-        H_LoS_fading: np.ndarray = np.cos(2 * np.pi * phase_shifts_rad) + 1j * np.sin(2 * np.pi * phase_shifts_rad)
-    
-        # Compute fast fading using Rician principle
-        return np.sqrt(1 / (K_factor + 1)) * H_Rayleigh_fading + np.sqrt(K_factor / (1 + K_factor)) * H_LoS_fading
-    
     
     def Rician_fading_far_field_approx(
         self,
         available_PRBs: int,
         k_factor_bAnt_to_aAnt_dB: np.ndarray,
         array_factor_linear: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> np.ndarray:
         """
         Computes Rician fading using a far-field approximation.
     
@@ -283,7 +287,11 @@ class Fast_Fading_Gain(Saveable):
         K_factor: np.ndarray = tools.dBm_to_mW(k_factor_bAnt_to_aAnt_dB)
     
         # Calculate NLoS Rayleigh component
-        H_Rayleigh_fading: np.ndarray = self.Rayleigh_fading(available_PRBs, k_factor_bAnt_to_aAnt_dB.shape[0], k_factor_bAnt_to_aAnt_dB.shape[1])
+        H_Rayleigh_fading: np.ndarray = self.Rayleigh_fading(
+            available_PRBs, 
+            k_factor_bAnt_to_aAnt_dB.shape[0], 
+            k_factor_bAnt_to_aAnt_dB.shape[1]
+        )
     
         # Compute LoS and NLoS coefficients
         LoS_channel_coefficients: np.ndarray = np.sqrt(K_factor / (1 + K_factor)) * array_factor_linear
@@ -298,7 +306,7 @@ class Fast_Fading_Gain(Saveable):
         available_PRBs: int,
         k_factor_bAnt_to_aAnt_dB: np.ndarray,
         array_factor_linear: np.ndarray,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Computes Rician fading using a far-field approximation with PyTorch.
     
@@ -316,13 +324,21 @@ class Fast_Fading_Gain(Saveable):
         K_factor: np.ndarray = tools.dBm_to_mW(k_factor_bAnt_to_aAnt_dB)
     
         # Calculate NLoS Rayleigh component
-        H_Rayleigh_fading: torch.Tensor = self.Rayleigh_fading_torch(available_PRBs, k_factor_bAnt_to_aAnt_dB.shape[0], k_factor_bAnt_to_aAnt_dB.shape[1])
+        H_Rayleigh_fading: torch.Tensor = self.Rayleigh_fading_torch(
+            available_PRBs, 
+            k_factor_bAnt_to_aAnt_dB.shape[0], 
+            k_factor_bAnt_to_aAnt_dB.shape[1]
+        )
     
         # Compute LoS and NLoS coefficients
-        sqrt_K_factor: torch.Tensor = torch.sqrt(torch.tensor(K_factor / (1 + K_factor), device=self.device, dtype=torch.half))
+        sqrt_K_factor: torch.Tensor = torch.sqrt(
+            torch.tensor(K_factor / (1 + K_factor), device=self.device, dtype=torch.half)
+        )
         LoS_channel_coefficients: torch.Tensor = sqrt_K_factor * torch.tensor(array_factor_linear, device=self.device, dtype=torch.chalf)
     
-        sqrt_K_factor_comp: torch.Tensor = torch.sqrt(torch.tensor(1 / (K_factor + 1), device=self.device, dtype=torch.half))
+        sqrt_K_factor_comp: torch.Tensor = torch.sqrt(
+            torch.tensor(1 / (K_factor + 1), device=self.device, dtype=torch.half)
+        )
         NLoS_channel_coefficients: torch.Tensor = sqrt_K_factor_comp * H_Rayleigh_fading
     
         # Combine to compute fast fading
@@ -377,11 +393,17 @@ class Fast_Fading_Gain(Saveable):
         rng.manual_seed(self.seed + 0)
     
         # Generate real and imaginary parts for the fading coefficients
-        real_part: torch.Tensor = \
-            torch.zeros((available_PRBs, number_of_RX_antennas, number_of_TX_antennas), device=self.device, dtype=torch.float16).normal_(generator=rng)
+        real_part: torch.Tensor = torch.zeros(
+            (available_PRBs, number_of_RX_antennas, number_of_TX_antennas), 
+            device=self.device, 
+            dtype=torch.float16
+        ).normal_(generator=rng)
     
-        imag_part: torch.Tensor = \
-            torch.zeros((available_PRBs, number_of_RX_antennas, number_of_TX_antennas), device=self.device, dtype=torch.float16).normal_(generator=rng)
+        imag_part: torch.Tensor = torch.zeros(
+            (available_PRBs, number_of_RX_antennas, number_of_TX_antennas), 
+            device=self.device, 
+            dtype=torch.float16
+        ).normal_(generator=rng)
     
         # Compute Rayleigh fading coefficients
         return (1 / torch.sqrt(torch.tensor(2.0, device=self.device))) * (real_part + 1j * imag_part)

@@ -12,6 +12,7 @@ matteo.bernabe@iteam.upv.es
 """
 
 from giulia.mac import schedulers
+from giulia.logger import warning, debug, info
 
 class MAC:
     """
@@ -26,9 +27,8 @@ class MAC:
                  ue_deployment_obj,
                  cell_CSI_RS_conf_obj,
                  best_serving_CSI_RS_per_ue_obj,
-                 dl_fast_fading_gain_ueAnt_to_cellAnt_obj,
-                 resource_allocation,
-                 prb_requirement_generator_ue_obj):
+                 dl_fast_fading_gain_ueAnt_to_cellAnt_obj, 
+                 baseStationsAll_Parent_obj):
         """
         Initializes the MAC layer and its functions, starting with the scheduler.
         
@@ -50,15 +50,19 @@ class MAC:
         self.cell_CSI_RS_conf_obj = cell_CSI_RS_conf_obj
         self.best_serving_CSI_RS_per_ue_obj = best_serving_CSI_RS_per_ue_obj
         self.dl_fast_fading_gain_ueAnt_to_cellAnt_obj = dl_fast_fading_gain_ueAnt_to_cellAnt_obj
-        self.resource_allocation = resource_allocation
-        self.prb_requirement_generator_ue_obj = prb_requirement_generator_ue_obj
+        self.baseStationsAll_Parent_obj = baseStationsAll_Parent_obj
 
         # Extract scheduling model from the network deployment object
+        
         scheduling_model = network_deployment_obj.df_ep.get("BS_scheduling_model", "").iloc[self.cell_index]
 
         # Initialize scheduler based on the scheduling model
         self._initialize_scheduler(scheduling_model)
 
+        # Set cell specific mac layer rescheduling
+        self.rescheduling_us = self.simulation_config_obj.event_scheduling_info['base_stations_obj']['mac']
+        
+    
 
     def _initialize_scheduler(self, scheduling_model: str):
         """
@@ -81,8 +85,7 @@ class MAC:
                 self.cell_CSI_RS_conf_obj,
                 self.best_serving_CSI_RS_per_ue_obj,
                 self.dl_fast_fading_gain_ueAnt_to_cellAnt_obj,
-                self.resource_allocation,
-                self.prb_requirement_generator_ue_obj
+                self.baseStationsAll_Parent_obj
             )
         elif scheduling_model == "simplex_based":
             self.scheduler_obj = schedulers.SchedulerSimplex(
@@ -93,15 +96,17 @@ class MAC:
                 self.cell_CSI_RS_conf_obj,
                 self.best_serving_CSI_RS_per_ue_obj,
                 self.dl_fast_fading_gain_ueAnt_to_cellAnt_obj,
-                self.resource_allocation,
-                self.prb_requirement_generator_ue_obj
+                self.baseStationsAll_Parent_obj
             )
         else:
             raise ValueError(f"Unsupported scheduling model: {scheduling_model}")
 
-
-    def _run(self):
+    def _run(self, rescheduling_us=-1):
         """
         Initializes the functioning of the scheduler
         """    
         self.scheduler_obj._run()
+        
+        # info(f"           MAC {self.cell_name}")
+        
+        return rescheduling_us

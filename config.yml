@@ -1,0 +1,153 @@
+# Configure how the simulator will work
+args:
+  # Simulation preset. One of:
+  # - GiuliaStd: Standard simulation
+  # - GiuliaMfl': Multi-frequency layer simulation
+  preset: 'GiuliaStd'
+  # Simulation model. One of:
+  # ITU_R_M2135_UMa, ITU_R_M2135_UMi, 3GPPTR36_814_Case_1,  3GPPTR36_814_Case_1_omni, 3GPPTR36_814_Case_1_single_bs,
+  # 3GPPTR36_814_Case_1_single_bs_omni, 3GPPTR36_814_Case_1_omni_dana,  3GPPTR38_901_UMa_C1, 3GPPTR38_901_UMa_C2,
+  # 3GPPTR38_901_UMa_lsc, 3GPPTR38_901_UMa_lsc_sn, 3GPPTR38_901_UMa_lsc_single_bs, 3GPPTR38_901_UMa_lsc_single_sector,
+  # 3GPPTR38_901_UMa_2GHz_lsc, 3GPPTR38_901_UMa_C_band_lsc, 3GPPTR38_901_UMi_C1, 3GPPTR38_901_UMi_C2, 3GPPTR38_901_UMi_lsc,
+  # 3GPPTR38_901_UMi_C_band_lsc, 3GPPTR38_901_UMi_fr3_lsc, 3GPPTR38_901_UPi_fr3_lsc, 3GPPTR36_777_UMa_AV, 3GPPTR36_777_UMi_AV,
+  # 3GPPTR38_811_Urban_NTN, 3GPPTR38_811_Dense_Urban_NTN, 3GPPTR38_811_Dense_Urban_HAPS_ULA, 3GPPTR38_811_Dense_Urban_HAPS_UPA,
+  # 3GPPTR38_811_Dense_Urban_HAPS_Reflector, ITU_R_M2135_UMa_multilayer, ITU_R_M2135_UMa_Umi_colocated_multilayer,
+  # ITU_R_M2135_UMa_Umi_noncolocated_multilayer, 3GPPTR38_901_4G, 3GPPTR38_901_5G, 3GPPTR38_901_6G, 3GPPTR38_901_4G5G_multilayer,
+  # 3GPPTR38_901_4G_5G_multilayer, 3GPPTR38_901_4G_5G6G_multilayer, 3GPPTR38_901_4G_5G_6G_multilayer, 3GPPTR38_901_4G5G_cell_reselection,
+  # dataset
+  scenario_model: '3GPPTR38_901_4G_5G_multilayer'
+  # Every ITU and 3GPP scenario model above has its corresponding UE playground deployment model. If we want to use such
+  # corresponding model, no need to specify any input. Alternatively, we have other UE playground deployment models.
+  # One of:
+  # - None (empty/null, default scenario-based)
+  # - rectangular
+  # - circular
+  ue_playground_model:
+  # UE distribution model. One of: grid, uniform, uniform_with_hotspots, inhomogeneous_per_cell
+  ue_distribution: 'uniform' 
+  # UE mobility model. One of: None (empty/null), straight_walk, circular_walk
+  ue_mobility:
+  # Link direction. One of: downlink, uplink, downlink_uplink (both)
+  link_direction: 'downlink'
+  # Enable wraparound for network topology. true/false
+  wraparound:
+  # Number of simulation snapshots. A number greater than 0
+  snapshots: 1
+  # Specify whether you want to enable GPU usage or not. true/false
+  enable_GPU: true
+  # Enable regression testing mode. true/false
+  regression: false
+  # Set the logging level. A number between 0 and 4, both inclusive.
+  log_level: 0
+  # Whether to save the simulation results. 0=false, 1=true
+  save_results: 1
+  # Generate plots for simulation results. true/false
+  plots: false
+ 
+run:
+  # Which example file to run.
+  # Options: EV, EV_batch, EV_EE_UEassociation, EV_EE_UEassociation_batch, EV_HapsSym_Reflector
+  example: EV
+ 
+output:
+  # The directory where all the output files will be placed. Absolute, or relative to the root of the repository.
+  directory: outputs/gof
+  # Which format(s) to use for the outputs. See below for more details.
+  formats:
+    npz:
+      # Whether to enable NPZ output or not.
+      enable: true
+    parquet:
+      # Whether to enable Parquet output or not.
+      enable: true
+      # Which compression method to use for the output data.
+      # This is necessary in some cases, because Parquet works with a folder structure, which may be inconvenient to share
+      # in some cases. Compressing it helps to move it around.
+      # ``zip`` will give ``.gof`` files.
+      # NOTE: this only takes effect when `use_partition_cols` is true. Without partitioning the
+      # output is already a single (snappy-compressed) .parquet file, so nothing is packed and no
+      # .gof is produced. See docs/output-saveable/output-module.md
+      # Options: ``none``, ``zip``
+      compression: zip
+      # Will only be considered if `compression` is not "none".
+      # If `true`, the original files will be removed after compressing the parquet file structure.
+      rm_uncompressed: false
+      # Whether to use partition columns for the Parquet output. true/false
+      use_partition_cols: false
+ 
+ 
+  # All the fields to be included in the output. If empty or not specified, ALL of them are exported.
+  #
+  # CAVEATS before uncommenting `fields`:
+  #   - It is ONE filter applied to ALL parquet files (generic, ue_kpi, cell_kpi).
+  #   - Expanded 2-D variables are suffixed in the output (e.g.
+  #     'RSRP_SSB_no_fast_fading.rsrp_ue_to_cell_dBm.0', '.1', ...). Listing the BASE name keeps
+  #     ALL of its expanded columns; list a single '.0' to keep just that one.
+  #   - Some entries are dicts/complex arrays that do not serialize and never become columns.
+  #   - The generic file ALSO has hardcoded core columns (cell_throughput_Mbps,
+  #     best_serving_CRS_rsrp_per_ue_dBm, ...) written by a SEPARATE code path
+  #     (save_performance.py::Performance.process). Those literal generic-file columns are NOT
+  #     catalog entries. The block at the bottom ("GENERIC core KPIs, as catalog entries") lists
+  #     the catalog '<Class>.<variable>' equivalent of each generic KPI, traced from that file.
+  #     Selecting one exports the KPI through its Saveable, into the parquet its class declares
+  #     (ue_kpi / cell_kpi / crsBeam_kpi / ssbBeam_kpi / generic, …) — NOT necessarily the wide
+  #     generic file. Generic KPIs whose attribute is in no expose_variables() have no catalog
+  #     entry and are left commented there, with the generic name as reference.
+  #   - Index columns (episode_idx / step_idx / ue_id / cell_id) are always kept automatically.
+  #
+  # The list below is the GiuliaStd catalog (see docs/output-saveable/saveable-catalog.md). Uncomment `fields`
+  # and the lines you want to keep.
+  fields:
+    # ---- CRS (Cell-specific Reference Signal; only populated when a CRS layer exists) ----
+    - Cell_Selection_CRS.best_serving_cell_ID_per_ue          # best_serving_cell_ID_per_ue_based_on_CRS
+    - Cell_Selection_CRS.best_server_distance_3d_per_ue_m     # best_serving_CRS_distance_3d_m
+    - Cell_Selection_CRS.best_server_coupling_gain_per_ue_dB  # best_serving_CRS_coupling_gain_dB
+    - Cell_Selection_CRS.best_server_re_noise_per_ue_dBm      # best_serving_CRS_re_noise_per_ue_dBm
+    - Cell_Selection_CRS.best_server_rsrp_per_ue_dBm          # best_serving_CRS_rsrp_per_ue_dBm
+
+    
+    - RSRP_CRS_no_fast_fading.rsrp_ue_to_cell_dBm             # CRS_RSRP_no_fast_fading_ue_to_cell_dBm
+    - SINR_CRS.sinr_ue_to_cell_dB                             # CRS_sinr_ue_to_cell_dB
+    - SINR_CRS.usefulPower_ue_dBm                             # CRS_usefulPower_ue_dBm
+    - SINR_CRS.interfPower_ue_dBm                             # CRS_interfPower_ue_dBm
+
+    # ---- SSB (Synchronization Signal Block) ----
+    - Cell_Selection_SSB.best_serving_cell_ID_per_ue          # best_serving_cell_ID_per_ue_based_on_SSB
+    - Cell_Selection_SSB.best_server_distance_3d_per_ue_m     # best_serving_SSB_distance_3d_m
+    - Cell_Selection_SSB.best_server_coupling_gain_per_ue_dB  # best_serving_SSB_coupling_gain_dB
+    - Cell_Selection_SSB.best_server_re_noise_per_ue_dBm      # best_serving_SSB_re_noise_per_ue_dBm
+    - Cell_Selection_SSB.best_server_rsrp_per_ue_dBm          # best_serving_SSB_rsrp_per_ue_dBm
+    - RSRP_SSB_no_fast_fading.rsrp_ue_to_cell_dBm             # SSB_RSRP_no_fast_fading_ue_to_cell_dBm
+    - SINR_SSB.sinr_ue_to_cell_dB                             # SSB_sinr_ue_to_cell_dB
+    - SINR_SSB.usefulPower_ue_dBm                             # SSB_usefulPower_ue_dBm
+    - SINR_SSB.interfPower_ue_dBm                             # SSB_interfPower_ue_dBm
+    - Cell_Selection_SSB.best_serving_beam_ID_per_ue          # best_serving_SSB_per_ue
+
+    # ---- CSI-RS (Channel State Information Reference Signal) ----
+    - Beam_Selection.best_serving_beam_ID_per_ue              # best_serving_CSI_RS_per_ue
+    - Beam_Selection.best_serving_beam_rsrp_per_ue_dBm        # best_serving_CSI_RS_rsrp_per_ue_dBm
+    - SINR_CSI_RS.effective_sinr_ue_to_cell_dB               # effective_CSI_RS_sinr_ue_to_cell_dB
+    # CSI_RS_usefulPower_ue_dBm / CSI_RS_interfPower_ue_dBm are disabled in save_performance.py (never exported).
+
+    # ---- UE counts per cell and beam ----
+    - Cell_Selection_CRS.ues_per_beam                         # ues_per_cell_based_on_CRS (reads ues_per_beam)
+    - Cell_Selection_SSB.ues_per_beam                         # ues_per_SSB_beam
+    - Cell_Selection_SSB.ues_per_cell                         # ues_per_cell (= r_e_ues_per_cell_based_on_SSB) -> cell_kpi
+    - Beam_Selection.ues_per_beam                             # ues_per_CSI_RS_beam -> csiRsBeam_kpi (new file)
+
+    # ---- Cell and beam activity (2-D UE×beam masks -> ue_kpi; beam axis spread into .0/.1/... columns) ----
+    - Cell_Selection_CRS.beam_activity_per_ue                 # cell_activity_per_ue
+    - Cell_Selection_SSB.beam_activity_per_ue                 # SSB_beam_activity_per_ue
+    - Beam_Selection.beam_activity_per_ue                     # CSI_RS_beam_activity_per_ue
+
+    # ---- Throughput and Power Consumption ----
+    - Rate_based_on_ins_CSI_RS_SINR.ue_throughput_Mbps        # ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_Mbps
+    - Rate_based_on_eff_CSI_RS_SINR.ue_throughput_Mbps        # ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_Mbps
+    - Rate_based_on_ins_CSI_RS_SINR.cell_throughput_Mbps      # cell_throughput_Mbps (reads the 'ins' object)
+    - Power_Consumption.power_consumption_per_radio_unit_kW              # power_consumption_per_radio_unit_kW (radio-only -> ru_kpi)
+    - Power_Consumption.P_base_band_W                                    # P_base_band_W (per-BBU baseband power -> bbu_kpi)
+    - Power_Consumption.power_consumption_per_radio_unit_incl_bbu_kW     # power_consumption_per_radio_unit_incl_bbu_kW (radio + per-RU BBU share -> ru_kpi)
+    - Power_Consumption.total_RAN_power_consumption_kW                   # total_network_power_consumption_kW (per-step scalar -> generic)
+
+    # ---- Base station radio-unit state ----
+    - BaseStations.cell_radio_unit_statuses                             # per-cell radio-unit status (string) -> cell_kpi

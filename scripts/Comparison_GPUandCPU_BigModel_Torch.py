@@ -5,6 +5,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+# Configuration: ensure we have access to the GPU
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print(f"Using device: {device}")
 print("Program Started\nComparison between big model using torch, CPU and GPU\n")
 
 # Neural network definition

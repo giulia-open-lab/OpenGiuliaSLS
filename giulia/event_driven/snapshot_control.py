@@ -1,13 +1,3 @@
-"""
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
-"""
-
 class Snapshot_control:
     _instance = None
 
@@ -19,5 +9,6 @@ class Snapshot_control:
 
     def __init__(self):
         if Snapshot_control._instance is not None:
-            raise Exception("This class is a singleton and has already been instantiated.")
+            raise Exception("Esta clase es un singleton y ya fue instanciada.")
         self.num_snapshots = 0
+        # Añade más parámetros según sea necesario

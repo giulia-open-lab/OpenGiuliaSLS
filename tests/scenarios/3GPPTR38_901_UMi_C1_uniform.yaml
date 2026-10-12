@@ -1,0 +1,12 @@
+name: 3GPPTR38_901_UMi_C1_uniform
+
+args:
+  scenario_model: 3GPPTR38_901_UMi_C1
+  ue_distribution: uniform
+  snapshots: 2
+  regression: true
+  save_results: 1
+  plots: false
+
+run:
+  example: EV

@@ -8,30 +8,30 @@ Giulia documentation
 
 Welcome to Giulia's Documentation!
 
-Join the Discussion at `Matrix <https://matrix.to/#/!hbiCQOdYflhWRcHwyT:matrix.org?via=matrix.org>`_.
+Giulia is a data-driven, event-driven system-level simulator for cellular and
+Wi-Fi networks, written in Python.
 
-Here are some quick links to get you started:
-
-.. toctree::
-   :maxdepth: 2
-   :caption: User guide
-
-   user-index
-   architecture
-   environment-setup
-   models
-   running-giulia
-   channel-generation
-   testing
+If you want to **install and run** the simulator, start with :doc:`quickstart`
+and then :doc:`user-index`. If you want to **contribute to the source code**,
+start with :doc:`setup-repository`.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Basics
+   :caption: Getting started
 
    quickstart
-   folder-hierarchy
-   ide
-   tests
+   user-index
+   environment-setup
+   running-giulia
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
+
+   architecture
+   models
+   channel-generation
+   testing
 
 .. toctree::
    :maxdepth: 2
@@ -41,5 +41,7 @@ Here are some quick links to get you started:
    setup-environment
    dev-public
    dev-own
+   folder-hierarchy
+   ide
    remote-development
    saveable-objects

@@ -60,7 +60,5 @@ for epoch in range(num_epochs):
 
 print(f"\nProgram Terminated.\n{device} Total Time {time.time()-start_time:0.4f}")
 
-if device.type=="cuda": 
-    sys.exit(1)
-else: 
-    sys.exit(0)
+if device.type=="cuda": sys.exit(1)
+else: sys.exit(0)

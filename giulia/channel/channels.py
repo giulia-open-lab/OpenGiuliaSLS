@@ -1,15 +1,13 @@
-
 # -*- coding: utf-8 -*-
 """
 Created on Thu Mar 23 11:40:53 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
+
+from __future__ import annotations
 
 import copy
 import itertools
@@ -20,9 +18,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 import sionna
-import tensorflow as tf
 import torch
-from sionna.rt import Transmitter, Receiver  # Import Sionna RT components
+from sionna.rt import Transmitter, Receiver, PathSolver  # Import Sionna RT components
 
 from giulia.tools import tools
 from giulia.tools.tools import log_calculations_time
@@ -39,7 +36,7 @@ class LoS_Channel(Saveable):
         self,
         simulation_config_obj: Any,
         network_deployment_obj: Any,
-        resource_time_frequency_obj: Any,
+        time_frequency_resource_obj: Any,
         cell_antenna_array_structure_obj: Any,
         ue_antenna_array_structure_obj: Any,
         slow_channel_gain_ue_to_cell_obj: Any,
@@ -52,7 +49,7 @@ class LoS_Channel(Saveable):
         Args:
             simulation_config_obj: Configuration for the simulation environment.
             network_deployment_obj: Network deployment details (e.g., base station configurations).
-            resource_time_frequency_obj: Resource allocation for time-frequency grids.
+            time_frequency_resource_obj: Resource allocation for time-frequency grids.
             cell_antenna_array_structure_obj: Details of cell antenna structures.
             ue_antenna_array_structure_obj: Details of user equipment (UE) antenna structures.
             slow_channel_gain_ue_to_cell_obj: Object representing slow channel gain between UE and cell.
@@ -68,7 +65,7 @@ class LoS_Channel(Saveable):
         # Input parameters
         self.simulation_config_obj: Any = simulation_config_obj
         self.network_deployment_obj: Any = network_deployment_obj
-        self.resource_time_frequency_obj: Any = resource_time_frequency_obj
+        self.time_frequency_resource_obj: Any = time_frequency_resource_obj
         self.cell_antenna_array_structure_obj: Any = cell_antenna_array_structure_obj
         self.ue_antenna_array_structure_obj: Any = ue_antenna_array_structure_obj
         self.slow_channel_gain_ue_to_cell_obj: Any = slow_channel_gain_ue_to_cell_obj
@@ -76,13 +73,14 @@ class LoS_Channel(Saveable):
         self.K_factor_ue_to_cell_obj: Any = K_factor_ue_to_cell_obj
 
         # Output storage for results
-        self.channel_results_per_frequency_layer_result: Dict[float, Dict[str, Any]] = {}
+        self.channel_results_per_frequency_layer_result: Dict[float|str, Dict[str, Any]] = {}
 
+    @property
+    def label(self) -> str: return 'ue_kpi'
 
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["channel_results_per_frequency_layer_result"]
-
+        return []
 
     def process(self, rescheduling_us: int = -1) -> int:
         """
@@ -102,13 +100,17 @@ class LoS_Channel(Saveable):
         self.antenna_to_node_a_mapping: np.ndarray = self.cell_antenna_array_structure_obj.antenna_to_node_mapping
         self.antenna_to_node_b_mapping: np.ndarray = self.ue_antenna_array_structure_obj.antenna_to_node_mapping
         self.slow_channel_gain_b_to_a_dB: np.ndarray = self.slow_channel_gain_ue_to_cell_obj.slow_channel_results_per_frequency_layer["all_freq"]["slow_channel_gain_b_to_a_dB"]
-        self.array_steering_vector_bAnt_to_aAnt_complex: np.ndarray = (self.array_steering_vector_ue_to_cell_obj.array_steering_vector_bAnt_to_aAnt_complex)
+        self.array_steering_vector_bAnt_to_aAnt_complex: np.ndarray = (
+            self.array_steering_vector_ue_to_cell_obj.array_steering_vector_bAnt_to_aAnt_complex
+        )
         self.K_factor_b_to_a_dB: np.ndarray = self.K_factor_ue_to_cell_obj.K_factor_b_to_a_dB
 
         # Initialize output matrix
         num_ues: int = self.slow_channel_gain_b_to_a_dB.shape[0]
         num_cells: int = self.slow_channel_gain_b_to_a_dB.shape[1]
-        dl_LoS_channel_gain_ueAnt_to_cellAnt_complex: np.ndarray = np.zeros((num_ues, num_cells), dtype=np.csingle)
+        dl_LoS_channel_gain_ueAnt_to_cellAnt_complex: np.ndarray = np.zeros(
+            (num_ues, num_cells), dtype=np.csingle
+        )
 
         # Start the timer for performance monitoring
         t_start: float = time.perf_counter()
@@ -133,13 +135,12 @@ class LoS_Channel(Saveable):
             k_factor_filtered: np.ndarray = self.k_factor_bAnt_to_aAnt_dB[:, mask_cell_antennas]
 
             # Compute LoS channel gains
-            dl_LoS_channel_gain_ueAnt_to_cellAnt_complex = \
-                self.los_channel_gain_b_to_a(slow_gain_filtered, steering_vector_filtered, k_factor_filtered)
+            dl_LoS_channel_gain_ueAnt_to_cellAnt_complex = self.los_channel_gain_b_to_a(slow_gain_filtered, steering_vector_filtered, k_factor_filtered)
             
         # Store results
-        self.channel_results_per_frequency_layer_result["all_freq"] = copy.deepcopy(self.resource_time_frequency_obj.dl_frequency_layer_info["all_freq"])
+        self.channel_results_per_frequency_layer_result["all_freq"] = {} # copy.deepcopy(self.time_frequency_resource_obj.dl_frequency_layer_info["all_freq"])
         self.channel_results_per_frequency_layer_result["all_freq"].update({
-            "available_PRBs": 1,  # LoS typically considers one PRB
+            # "available_PRBs": 1,  # LoS typically considers one PRB
             "dl_channel_gain_ueAnt_to_cellAnt_complex": dl_LoS_channel_gain_ueAnt_to_cellAnt_complex,
         })            
 
@@ -147,7 +148,6 @@ class LoS_Channel(Saveable):
         log_calculations_time('LoS Channel', t_start)
         
         return rescheduling_us
-
 
     def los_channel_gain_b_to_a(
         self,
@@ -171,16 +171,19 @@ class LoS_Channel(Saveable):
         K_factor_linear: np.ndarray = tools.dBm_to_mW(k_factor_bAnt_to_aAnt_dB)
     
         # Compute the square root of the K-factor fraction
-        sqrt_K_factor: torch.Tensor = \
-            torch.sqrt(torch.tensor(K_factor_linear / (1 + K_factor_linear), device=self.device, dtype=torch.half))
+        sqrt_K_factor: torch.Tensor = torch.sqrt(
+            torch.tensor(K_factor_linear / (1 + K_factor_linear), device=self.device, dtype=torch.half)
+        )
     
         # Compute LoS coefficients using the steering vectors and K-factor
-        LoS_coefficients: torch.Tensor = \
-            sqrt_K_factor * torch.tensor(array_steering_vector_bAnt_to_aAnt_complex, device=self.device, dtype=torch.chalf)
+        LoS_coefficients: torch.Tensor = sqrt_K_factor * torch.tensor(
+            array_steering_vector_bAnt_to_aAnt_complex, device=self.device, dtype=torch.chalf
+        )
     
         # Compute the final LoS channel gain
-        LoS_channel_gain: torch.Tensor = \
-            torch.sqrt(torch.tensor(slow_channel_gain_linear, device=self.device)) * LoS_coefficients
+        LoS_channel_gain: torch.Tensor = torch.sqrt(
+            torch.tensor(slow_channel_gain_linear, device=self.device)
+        ) * LoS_coefficients
     
         return LoS_channel_gain
 
@@ -195,12 +198,12 @@ class Channel(Saveable):
         self,
         simulation_config_obj: Any,
         network_deployment_obj: Any,
-        resource_time_frequency_obj: Any,
+        time_frequency_resource_obj: Any,
         cell_antenna_array_structure_obj: Any,
         ue_antenna_array_structure_obj: Any,
         slow_channel_gain_ue_to_cell_obj: Any,
         dl_fast_fading_gain_ueAnt_to_cellAnt_obj: Any,
-        channel_sn_obj: Any,
+        channel_sn_obj: ChannelSn| None,
     ):
         """
         Initializes the Channel class with configuration and deployment objects.
@@ -208,7 +211,7 @@ class Channel(Saveable):
         Args:
             simulation_config_obj: Configuration for the simulation environment.
             network_deployment_obj: Network deployment details (e.g., base station configurations).
-            resource_time_frequency_obj: Resource allocation for time-frequency grids.
+            time_frequency_resource_obj: Resource allocation for time-frequency grids.
             cell_antenna_array_structure_obj: Details of cell antenna structures.
             ue_antenna_array_structure_obj: Details of user equipment (UE) antenna structures.
             slow_channel_gain_ue_to_cell_obj: Object representing slow channel gain between UE and cell.
@@ -224,7 +227,7 @@ class Channel(Saveable):
         # Input parameters
         self.simulation_config_obj: Any = simulation_config_obj
         self.network_deployment_obj: Any = network_deployment_obj
-        self.resource_time_frequency_obj: Any = resource_time_frequency_obj
+        self.time_frequency_resource_obj: Any = time_frequency_resource_obj
         self.cell_antenna_array_structure_obj: Any = cell_antenna_array_structure_obj
         self.ue_antenna_array_structure_obj: Any = ue_antenna_array_structure_obj
         self.slow_channel_gain_ue_to_cell_obj: Any = slow_channel_gain_ue_to_cell_obj
@@ -235,9 +238,9 @@ class Channel(Saveable):
         self.channel_results_per_frequency_layer_result: Dict[float, Dict[str, Any]] = {}
 
 
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["channel_results_per_frequency_layer_result"]
+        return []
 
 
     def process(self, rescheduling_us: int = -1) -> int:
@@ -261,8 +264,7 @@ class Channel(Saveable):
         self.bs_fast_channel_models: np.ndarray = self.network_deployment_obj.df_ep["BS_fast_channel_model"].to_numpy()
         self.antenna_to_node_a_mapping: np.ndarray = self.cell_antenna_array_structure_obj.antenna_to_node_mapping
         self.antenna_to_node_b_mapping: np.ndarray = self.ue_antenna_array_structure_obj.antenna_to_node_mapping
-        self.slow_channel_gain_b_to_a_dB: np.ndarray = \
-            self.slow_channel_gain_ue_to_cell_obj.slow_channel_results_per_frequency_layer["all_freq"]["slow_channel_gain_b_to_a_dB"]
+        self.slow_channel_gain_b_to_a_dB: np.ndarray = self.slow_channel_gain_ue_to_cell_obj.slow_channel_results_per_frequency_layer["all_freq"]["slow_channel_gain_b_to_a_dB"]
         
 
         # Start timer for performance tracking
@@ -273,25 +275,32 @@ class Channel(Saveable):
         slow_channel_gain_bAnt_to_a_dB = np.repeat(self.slow_channel_gain_b_to_a_dB, counts_ue_ant, axis=0)
 
         values_cell_ant, counts_cell_ant = np.unique(self.antenna_to_node_a_mapping, return_counts=True)
-        self.slow_channel_gain_bAnt_to_aAnt_dB: np.ndarray = np.repeat(slow_channel_gain_bAnt_to_a_dB, counts_cell_ant, axis=1)
+        self.slow_channel_gain_bAnt_to_aAnt_dB: np.ndarray = np.repeat(
+            slow_channel_gain_bAnt_to_a_dB, counts_cell_ant, axis=1)
 
         # Process each frequency layer
         for dl_carrier_frequency_GHz, fading_result in self.fading_results_per_frequency_layer_result.items():
             # Extract relevant data for the current frequency layer
-            fast_fading_channel_coeff_bAnt_to_aAnt_complex: np.ndarray = fading_result["fast_fading_channel_coeff_bAnt_to_aAnt_complex"]
+            fast_fading_channel_coeff_bAnt_to_aAnt_complex: np.ndarray = fading_result[
+                "fast_fading_channel_coeff_bAnt_to_aAnt_complex"
+            ]
             
-            cells_in_frequency_mask: np.ndarray = fading_result["cells_in_frequency_mask"]
-            cell_ants_in_frequency_mask: np.ndarray = fading_result["cell_ants_in_frequency_mask"]
+            # Get the corresponding resource information for the current frequency layer
+            time_frequency_resource_info: Dict[str, Any] = self.time_frequency_resource_obj.dl_frequency_layer_info[dl_carrier_frequency_GHz]
 
-            ue_ants_in_frequency_mask: np.ndarray = fading_result["ue_ants_in_frequency_mask"]
+            cells_in_frequency_mask: np.ndarray = time_frequency_resource_info["cells_in_frequency_mask"]
+            cell_ants_in_frequency_mask: np.ndarray = time_frequency_resource_info["cell_ants_in_frequency_mask"]
+
+            ue_ants_in_frequency_mask: np.ndarray = time_frequency_resource_info["ue_ants_in_frequency_mask"]
 
             # Filter data for selected cells in frequency layer
-            slow_channel_gain_bAnt_to_aAnt_dB_filtered: np.ndarray = \
-                self.slow_channel_gain_bAnt_to_aAnt_dB[ue_ants_in_frequency_mask, :][:, cell_ants_in_frequency_mask]
+            slow_channel_gain_bAnt_to_aAnt_dB_filtered: np.ndarray = self.slow_channel_gain_bAnt_to_aAnt_dB[ue_ants_in_frequency_mask, :][:, cell_ants_in_frequency_mask]
 
             # Initialize output tensor for channel gains
             shape = fast_fading_channel_coeff_bAnt_to_aAnt_complex.shape
-            dl_channel_gain_ueAnt_to_cellAnt_complex = torch.zeros(shape, dtype=torch.cfloat, device=self.device)
+            dl_channel_gain_ueAnt_to_cellAnt_complex = torch.zeros(
+                shape, dtype=torch.cfloat, device=self.device
+            )
 
             # Process each propagation model independently
             for bs_fast_channel_model in np.unique(self.bs_fast_channel_models):
@@ -307,15 +316,11 @@ class Channel(Saveable):
 
                 # Calculate channel gains
                 if bs_fast_channel_model in ["3GPPTR38_901_UMa", "3GPPTR38_901_UMi", "Ray_tracing"]:
-                    dl_channel_gain_ueAnt_to_cellAnt_complex[:, :, mask_cell_antennas] = \
-                        self.sn_channel_gain_b_to_a(shape, counts_ue_ant, counts_cell_ant, self.resource_time_frequency_obj, self.channel_sn_obj)
+                    dl_channel_gain_ueAnt_to_cellAnt_complex[:, :, mask_cell_antennas] = self.sn_channel_gain_b_to_a(shape, counts_ue_ant, counts_cell_ant, 
+                                                                                                                     self.time_frequency_resource_obj, self.channel_sn_obj)
                 else:
-                    if not self.simulation_config_obj.debug_no_randomness:
-                        dl_channel_gain_ueAnt_to_cellAnt_complex[:, :, mask_cell_antennas] = \
-                            self.channel_gain_b_to_a(slow_gain_filtered, fast_fading_filtered)
-                    else:
-                        dl_channel_gain_ueAnt_to_cellAnt_complex[:, :, mask_cell_antennas] = \
-                            self.channel_gain_b_to_a(slow_gain_filtered, torch.ones_like(fast_fading_filtered, device=self.device))
+                    dl_channel_gain_ueAnt_to_cellAnt_complex[:, :, mask_cell_antennas] = self.channel_gain_b_to_a(slow_gain_filtered, fast_fading_filtered)
+
 
             # Store results
             self.channel_results_per_frequency_layer_result[dl_carrier_frequency_GHz] = copy.deepcopy(fading_result)
@@ -328,7 +333,6 @@ class Channel(Saveable):
         log_calculations_time('Channel', t_start)
 
         return rescheduling_us
-
 
     def channel_gain_b_to_a(
         self,
@@ -350,11 +354,11 @@ class Channel(Saveable):
         slow_channel_gain_linear: np.ndarray = tools.dBm_to_mW(slow_channel_gain_bAnt_to_aAnt_dB)
     
         # Compute the channel gain by combining the slow channel gain and fast fading coefficients
-        channel_gain: torch.Tensor = torch.sqrt(torch.tensor(slow_channel_gain_linear, device=self.device, dtype=torch.cfloat)) * \
-            torch.tensor(fast_fading_channel_coeff_bAnt_to_aAnt_complex, device=self.device, dtype=torch.cfloat)
+        channel_gain: torch.Tensor = torch.sqrt(
+            torch.tensor(slow_channel_gain_linear, device=self.device, dtype=torch.cfloat)
+        ) * torch.tensor(fast_fading_channel_coeff_bAnt_to_aAnt_complex, device=self.device, dtype=torch.cfloat)
 
         return channel_gain
-    
 
     def sn_channel_gain_b_to_a(
         self,
@@ -362,7 +366,7 @@ class Channel(Saveable):
         counts_ue: np.ndarray,
         counts_cell: np.ndarray,
         resource_grid_obj: object,
-        channel_sn_obj: object,
+        channel_sn_obj: ChannelSn,
     ) -> torch.Tensor:
         """
         Computes the SN channel gain from transmitter (b) to receiver (a) based on OFDM channel models.
@@ -379,7 +383,9 @@ class Channel(Saveable):
             A torch tensor of complex type with the specified shape, containing channel gains.
         """
         # Initialize the output tensor on the specified device
-        output: torch.Tensor = torch.zeros(shape, dtype=torch.cfloat, device=self.device)
+        output: torch.Tensor = torch.zeros(
+            shape, dtype=torch.cfloat, device=self.device
+        )
     
         # Iterate through all OFDM channels in the SN model
         for ofdm_channel_index in range(len(channel_sn_obj.ofdm_channels)):
@@ -387,37 +393,40 @@ class Channel(Saveable):
             ofdm_channel = channel_sn_obj.ofdm_channels[ofdm_channel_index]
     
             # Retrieve the assignment of the current channel model
-            ofdm_channel_assignment_b_to_a: np.ndarray = channel_sn_obj.ofdm_channel_assignment_b_to_a == ofdm_channel_index
+            ofdm_channel_assignment_b_to_a = channel_sn_obj.ofdm_channel_assignment_b_to_a == ofdm_channel_index
     
             # Expand the assignment matrix from UE size to UE antenna size
-            ofdm_channel_assignment_bAnt_to_a: np.ndarray = np.repeat(ofdm_channel_assignment_b_to_a, counts_ue, axis=0)
+            ofdm_channel_assignment_bAnt_to_a: np.ndarray = np.repeat(
+                ofdm_channel_assignment_b_to_a, counts_ue, axis=0
+            )
     
             # Further expand the assignment matrix to include cell antennas
-            ofdm_channel_assignment_bAnt_to_aAnt: np.ndarray = np.repeat(ofdm_channel_assignment_bAnt_to_a, counts_cell, axis=1)
+            ofdm_channel_assignment_bAnt_to_aAnt: np.ndarray = np.repeat(
+                ofdm_channel_assignment_bAnt_to_a, counts_cell, axis=1
+            )
     
             # Generate a batch of frequency responses
             # Shape: [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_ofdm_symbols, num_subcarriers]
-            with tf.device("/GPU:0"):  # Force CPU usage due to GPU memory constraints
-                if callable(ofdm_channel):
-                    # If the channel model is callable, generate the frequency response
-                    h_freq = ofdm_channel()
-                else:
-                    # If the channel model is a tensor, use it directly
-                    h_freq = ofdm_channel
-    
+            if callable(ofdm_channel):
+                # If the channel model is callable, generate the frequency response
+                h_freq = ofdm_channel()
+            else:
+                # If the channel model is a tensor, use it directly
+                h_freq = ofdm_channel
+
             # Process the frequency response tensor
-            h_freq = tf.squeeze(h_freq, axis=(0, 5))  # Remove unnecessary dimensions
-            h_freq = tf.reduce_sum(h_freq, axis=1)  # Sum across OFDM symbols
-            h_freq = tf.reshape(
+            h_freq = torch.squeeze(h_freq, dim=(0, 5))  # Remove unnecessary dimensions
+            h_freq = torch.sum(h_freq, dim=1)  # Sum across OFDM symbols
+            h_freq = torch.reshape(
                 h_freq,
-                [
-                    np.size(h_freq, 0),
-                    np.size(h_freq, 1) * np.size(h_freq, 2),
-                    np.size(h_freq, 3),
-                ],
+                (
+                    h_freq.shape[0],
+                    h_freq.shape[1] * h_freq.shape[2],
+                    h_freq.shape[3],
+                ),
             )
-            h_freq = tf.transpose(h_freq, perm=[2, 0, 1])  # Permute axes for alignment
-            h_freq_np = h_freq.numpy()  # Convert TensorFlow tensor to numpy array
+            h_freq = h_freq.permute(2, 0, 1)  # Permute axes for alignment
+            h_freq_np = h_freq.detach().cpu().numpy()  # Convert PyTorch tensor to numpy array
     
             # Create a mask to identify insertion positions
             mask: np.ndarray = np.zeros_like(output.cpu().numpy(), dtype=bool)
@@ -440,7 +449,7 @@ class ChannelSn(Saveable):
                  site_deployment_obj,
                  network_deployment_obj,
                  ue_deployment_obj,
-                 resource_time_frequency_obj,
+                 time_frequency_resource_obj,
                  cell_antenna_array_structure_obj,
                  ue_antenna_array_structure_obj):
         
@@ -454,24 +463,26 @@ class ChannelSn(Saveable):
 
         ##### Input storage 
         ######################## 
+        
         self.site_deployment_obj = site_deployment_obj
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj   
-        self.resource_time_frequency_obj = resource_time_frequency_obj
+        self.time_frequency_resource_obj = time_frequency_resource_obj
         self.cell_antenna_array_structure_obj = cell_antenna_array_structure_obj
         self.ue_antenna_array_structure_obj = ue_antenna_array_structure_obj        
 
 
         ##### Outputs 
         ######################## 
+        
         self.ofdm_channels = []
         self.ofdm_channel_assignment_b_to_a = []
         
         
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["ofdm_channels"]
+        return []
 
        
     def process(self, rescheduling_us=-1): 
@@ -480,45 +491,51 @@ class ChannelSn(Saveable):
         ######################## 
         
         # Random numbers
-        tf.random.set_seed(self.simulation_config_obj.random_seed+0)      
+        
+        sionna.phy.config.seed = self.simulation_config_obj.random_seed+0
         
         # Network
+        
         self.bs_fast_channel_models = self.network_deployment_obj.df_ep["BS_fast_channel_model"].to_numpy()  
         
         
         ##### Process outputs
         ########################
-        self.ofdm_channel_assignment_b_to_a = np.ones((len(self.ue_deployment_obj.df_ep), len(self.network_deployment_obj.df_ep)), dtype=int) * np.nan
-       
         
-        ##### Start timer
-        ########################  
-        t_start = time.perf_counter() 
-                
-        
-        ##### Switch
-        ########################        
-        
-        # Find the set of unique propagation models to process them independently
-        bs_fast_channel_model_set = set(self.bs_fast_channel_models)
-
+        self.ofdm_channels = []
         self.ofdm_channel_assignment_b_to_a = np.ones(
             (len(self.ue_deployment_obj.df_ep), len(self.network_deployment_obj.df_ep)), dtype=int) * np.nan
 
+        ##### Start timer
+        ########################
+
+        t_start = time.perf_counter()
+
+
+        ##### Switch
+        ########################
+
+        # Find the set of unique propagation models to process them independently
+
+        bs_fast_channel_model_set = set(self.bs_fast_channel_models)
+
         # Process each propagation model independently
+            
         for bs_fast_channel_model in bs_fast_channel_model_set:
             
             # Identify cells with the selected propagation model
+            
             mask = bs_fast_channel_model ==  self.bs_fast_channel_models 
             
             # Calculate channel
+            
             if (bs_fast_channel_model == "3GPPTR38_901_UMa"): 
                 
                 self.ofdm_channels, self.ofdm_channel_assignment_b_to_a =\
                     self.channel_3GPPTR38_901_UMa(self.simulation_config_obj,
                                                   self.network_deployment_obj.df_ep,
                                                   self.ue_deployment_obj.df_ep,
-                                                  self.resource_time_frequency_obj,
+                                                  self.time_frequency_resource_obj,
                                                   self.cell_antenna_array_structure_obj,
                                                   self.ue_antenna_array_structure_obj,
                                                   mask,
@@ -531,7 +548,7 @@ class ChannelSn(Saveable):
                     self.channel_3GPPTR38_901_UMi(self.simulation_config_obj,
                                                   self.network_deployment_obj.df_ep,
                                                   self.ue_deployment_obj.df_ep,
-                                                  self.resource_time_frequency_obj,
+                                                  self.time_frequency_resource_obj,
                                                   self.cell_antenna_array_structure_obj,
                                                   self.ue_antenna_array_structure_obj,
                                                   mask,
@@ -544,8 +561,8 @@ class ChannelSn(Saveable):
                     self.channel_ray_tracing(self.site_deployment_obj,
                                              self.simulation_config_obj,
                                              self.network_deployment_obj.df_ep,
-                                             self.ue_deployment_obj.df_ep,
-                                             self.resource_time_frequency_obj,
+                                              self.ue_deployment_obj.df_ep,
+                                             self.time_frequency_resource_obj,
                                              self.cell_antenna_array_structure_obj,
                                              self.ue_antenna_array_structure_obj,
                                              mask,
@@ -555,6 +572,7 @@ class ChannelSn(Saveable):
 
         ##### End
         ########################
+
         log_calculations_time('Sionna', t_start)
 
         return rescheduling_us
@@ -575,21 +593,18 @@ class ChannelSn(Saveable):
                     
             # Get cell information 
         cell_positions_m = self.network_deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)[mask]
-        cell_orientations_rad = np.radians(df_ep[["antenna_config_hor_alpha_mec_bearing_deg", 
-                                                  "antenna_config_ver_beta_mec_downtilt_deg", 
-                                                  "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[mask]
+        cell_orientations_rad = np.radians(df_ep[["antenna_config_hor_alpha_mec_bearing_deg", "antenna_config_ver_beta_mec_downtilt_deg", "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[mask]
         cell_orientations_rad[:,1] -= np.pi/2 # Note that Sionna uses 0 as the horizon. We use 0 as the sky
             
             # Get UE information
         ue_positions_m = df_ue_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)
-        ue_orientations_rad = np.radians(df_ue_ep[["antenna_config_hor_alpha_mec_bearing_deg", 
-                                                   "antenna_config_ver_beta_mec_downtilt_deg", 
-                                                   "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))
+        ue_orientations_rad = np.radians(df_ue_ep[["antenna_config_hor_alpha_mec_bearing_deg", "antenna_config_ver_beta_mec_downtilt_deg", "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))
         ue_orientations_rad[:,1] -= np.pi/2 # Note that Sionna uses 0 as the horizon. We use 0 as the sky
         ue_velocity_ms =  tools.kmh_to_ms(df_ue_ep[["velocity_x_kmh", "velocity_y_kmh", "velocity_z_kmh"]].to_numpy(dtype=np.single))
         ue_indoor = df_ue_ep["indoor"].to_numpy(dtype=bool)     
         
             # Get frequencies, and antenna arrays
+        #carrier_frequency_GHz = self.network_deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy(dtype=np.single)[mask]
         dl_carrier_frequency_GHz = cell_antenna_array_structure_obj.antenna_array_carrier_frequency_GHz
         cell_antenna_array_type_index = cell_antenna_array_structure_obj.antenna_array_type_index[mask]
         ue_antenna_array_type_index = ue_antenna_array_structure_obj.antenna_array_type_index   
@@ -597,6 +612,7 @@ class ChannelSn(Saveable):
         
         # Get uniques 
         
+        #carrier_frequency_GHz_set = set(carrier_frequency_GHz)
         cell_antenna_array_type_index_set = set(cell_antenna_array_type_index)
         ue_antenna_array_type_index_set = set(ue_antenna_array_type_index)   
         dl_resource_grid_index_set = set(dl_resource_grid_index)              
@@ -606,11 +622,13 @@ class ChannelSn(Saveable):
         for model_params in itertools.product(cell_antenna_array_type_index_set, ue_antenna_array_type_index_set, dl_resource_grid_index_set):  #carrier_frequency_GHz_set
             
             # Derive masks for UEs and cells 
+            
             ue_antenna_array_type_mask = ue_antenna_array_type_index == model_params[1]  
             cell_antenna_array_type_mask = cell_antenna_array_type_index == model_params[0]
             ue_to_cell_mask = np.logical_and(ue_antenna_array_type_mask[:, np.newaxis], cell_antenna_array_type_mask)   
 
             # Create UMa channel model
+        
             channel_model = sionna.phy.channel.tr38901.UMa(carrier_frequency = dl_carrier_frequency_GHz[model_params[0]] * 1e9,
                                                        o2i_model = 'low',
                                                        ut_array = ue_antenna_array_structure_obj.antenna_array_types[model_params[1]],
@@ -618,27 +636,30 @@ class ChannelSn(Saveable):
                                                        direction = simulation_config_obj.link_direction)  
         
             # Set topology in channel model
-            channel_model.set_topology(ut_loc = tf.convert_to_tensor(ue_positions_m[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       bs_loc = tf.convert_to_tensor(cell_positions_m[np.newaxis,cell_antenna_array_type_mask,:]),
-                                       ut_orientations = tf.convert_to_tensor(ue_orientations_rad[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       bs_orientations = tf.convert_to_tensor(cell_orientations_rad[np.newaxis,cell_antenna_array_type_mask,:]),
-                                       ut_velocities = tf.convert_to_tensor(ue_velocity_ms[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       in_state = tf.convert_to_tensor(ue_indoor[np.newaxis,ue_antenna_array_type_mask]))
+  
+            channel_model.set_topology(ut_loc = torch.as_tensor(ue_positions_m[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       bs_loc = torch.as_tensor(cell_positions_m[np.newaxis,cell_antenna_array_type_mask,:]),
+                                       ut_orientations = torch.as_tensor(ue_orientations_rad[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       bs_orientations = torch.as_tensor(cell_orientations_rad[np.newaxis,cell_antenna_array_type_mask,:]),
+                                       ut_velocities = torch.as_tensor(ue_velocity_ms[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       in_state = torch.as_tensor(ue_indoor[np.newaxis,ue_antenna_array_type_mask]))
+            #channel_model.show_topology()    
             
             # Get SN resource grid 
             
             rg = resrouce_grid_obj.dl_resource_grid[model_params[2]]
         
             # Instanting the SN frequency domain channel
-            ofdm_channel = sionna.phy.channel.generate_ofdm_channel.GenerateOFDMChannel(channel_model, rg)
+            
+            ofdm_channel = sionna.phy.channel.GenerateOFDMChannel(channel_model, rg)
         
             # Store channel models and asignments
+                        
             ofdm_channels.append(ofdm_channel)
             ofdm_channel_assignment_b_to_a[ue_to_cell_mask] = len(ofdm_channels)-1            
         
         return ofdm_channels, ofdm_channel_assignment_b_to_a
     
-
     def channel_3GPPTR38_901_UMi(self, 
                                  simulation_config_obj,
                                  df_ep,
@@ -654,21 +675,18 @@ class ChannelSn(Saveable):
                     
             # Get cell information 
         cell_positions_m = self.network_deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)[mask]
-        cell_orientations_rad = np.radians(df_ep[["antenna_config_hor_alpha_mec_bearing_deg", 
-                                                  "antenna_config_ver_beta_mec_downtilt_deg", 
-                                                  "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[mask]
+        cell_orientations_rad = np.radians(df_ep[["antenna_config_hor_alpha_mec_bearing_deg", "antenna_config_ver_beta_mec_downtilt_deg", "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[mask]
         cell_orientations_rad[:,1] -= np.pi/2 # Note that Sionna uses 0 as the horizon. We use 0 as the sky        
             
             # Get UE information
         ue_positions_m = df_ue_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)
-        ue_orientations_rad = np.radians(df_ue_ep[["antenna_config_hor_alpha_mec_bearing_deg", 
-                                                   "antenna_config_ver_beta_mec_downtilt_deg", 
-                                                   "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))
+        ue_orientations_rad = np.radians(df_ue_ep[["antenna_config_hor_alpha_mec_bearing_deg", "antenna_config_ver_beta_mec_downtilt_deg", "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))
         ue_orientations_rad[:,1] -= np.pi/2 # Note that Sionna uses 0 as the horizon. We use 0 as the sky
-        ue_velocity_ms =  tools.kmh_to_ms(df_ue_ep[["velocity_x_kmh","velocity_y_kmh", "velocity_z_kmh"]].to_numpy(dtype=np.single))
+        ue_velocity_ms =  tools.kmh_to_ms(df_ue_ep[["velocity_x_kmh", "velocity_y_kmh", "velocity_z_kmh"]].to_numpy(dtype=np.single))
         ue_indoor = df_ue_ep["indoor"].to_numpy(dtype=bool)     
         
             # Get frequencies, and antenna arrays
+        #carrier_frequency_GHz = self.network_deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy(dtype=np.single)[mask]
         dl_carrier_frequency_GHz = cell_antenna_array_structure_obj.antenna_array_carrier_frequency_GHz
         cell_antenna_array_type_index = cell_antenna_array_structure_obj.antenna_array_type_index[mask]
         ue_antenna_array_type_index = ue_antenna_array_structure_obj.antenna_array_type_index   
@@ -676,6 +694,7 @@ class ChannelSn(Saveable):
         
         # Get uniques 
         
+        #carrier_frequency_GHz_set = set(carrier_frequency_GHz)
         cell_antenna_array_type_index_set = set(cell_antenna_array_type_index)
         ue_antenna_array_type_index_set = set(ue_antenna_array_type_index)   
         dl_resource_grid_index_set = set(dl_resource_grid_index)              
@@ -685,11 +704,13 @@ class ChannelSn(Saveable):
         for model_params in itertools.product(cell_antenna_array_type_index_set, ue_antenna_array_type_index_set, dl_resource_grid_index_set):  #carrier_frequency_GHz_set
             
             # Derive masks for UEs and cells 
+            
             ue_antenna_array_type_mask = ue_antenna_array_type_index == model_params[1]  
             cell_antenna_array_type_mask = cell_antenna_array_type_index == model_params[0]
             ue_to_cell_mask = np.logical_and(ue_antenna_array_type_mask[:, np.newaxis], cell_antenna_array_type_mask)   
 
             # Create UMi channel model
+        
             channel_model = sionna.phy.channel.tr38901.UMi(carrier_frequency = dl_carrier_frequency_GHz[model_params[0]] * 1e9,
                                                        o2i_model = 'low',
                                                        ut_array = ue_antenna_array_structure_obj.antenna_array_types[model_params[1]],
@@ -697,25 +718,29 @@ class ChannelSn(Saveable):
                                                        direction = simulation_config_obj.link_direction)  
         
             # Set topology in channel model
-            channel_model.set_topology(ut_loc = tf.convert_to_tensor(ue_positions_m[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       bs_loc = tf.convert_to_tensor(cell_positions_m[np.newaxis,cell_antenna_array_type_mask,:]),
-                                       ut_orientations = tf.convert_to_tensor(ue_orientations_rad[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       bs_orientations = tf.convert_to_tensor(cell_orientations_rad[np.newaxis,cell_antenna_array_type_mask,:]),
-                                       ut_velocities = tf.convert_to_tensor(ue_velocity_ms[np.newaxis,ue_antenna_array_type_mask,:]),
-                                       in_state = tf.convert_to_tensor(ue_indoor[np.newaxis,ue_antenna_array_type_mask]))
+  
+            channel_model.set_topology(ut_loc = torch.as_tensor(ue_positions_m[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       bs_loc = torch.as_tensor(cell_positions_m[np.newaxis,cell_antenna_array_type_mask,:]),
+                                       ut_orientations = torch.as_tensor(ue_orientations_rad[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       bs_orientations = torch.as_tensor(cell_orientations_rad[np.newaxis,cell_antenna_array_type_mask,:]),
+                                       ut_velocities = torch.as_tensor(ue_velocity_ms[np.newaxis,ue_antenna_array_type_mask,:]),
+                                       in_state = torch.as_tensor(ue_indoor[np.newaxis,ue_antenna_array_type_mask]))
+            #channel_model.show_topology()    
             
             # Get SN resource grid 
+            
             rg = resrouce_grid_obj.dl_resource_grid[model_params[2]]
         
             # Instanting the SN frequency domain channel
-            ofdm_channel = sionna.phy.channel.generate_ofdm_channel.GenerateOFDMChannel(channel_model, rg)
+            
+            ofdm_channel = sionna.phy.channel.GenerateOFDMChannel(channel_model, rg)
         
             # Store channel models and asignments
+                        
             ofdm_channels.append(ofdm_channel)
             ofdm_channel_assignment_b_to_a[ue_to_cell_mask] = len(ofdm_channels)-1            
         
         return ofdm_channels, ofdm_channel_assignment_b_to_a    
-
 
     def channel_ray_tracing(self,
                             site_deployment_obj,
@@ -731,12 +756,14 @@ class ChannelSn(Saveable):
 
         #############################################################
         # Load scene in Mitsuba format
+
         scene = site_deployment_obj.scene
         scene_save_folder = site_deployment_obj.dataset_export_folder
         scene_name = site_deployment_obj.scene_name
 
         #############################################################
         # Remove existing transmitters and receivers
+
         num_transmitters = len(scene.transmitters)
         num_receivers = len(scene.receivers)
 
@@ -750,6 +777,7 @@ class ChannelSn(Saveable):
 
         #############################################################
         # Set transmitters and receivers
+
         min_lat = site_deployment_obj.scene_min_lat
         max_lat = site_deployment_obj.scene_max_lat
         min_long = site_deployment_obj.scene_min_long
@@ -765,7 +793,8 @@ class ChannelSn(Saveable):
         cell_orientations_rad = np.radians(df_ep[["antenna_config_hor_alpha_mec_bearing_deg",
                                                   #"antenna_config_ver_beta_mec_downtilt_deg",
                                                   "antenna_config_ver_beta_elec_downtilt_deg",
-                                                  "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[mask]
+                                                  "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))[
+            mask]
         cell_orientations_rad -= [0, np.pi/2, 0] # Note that Sionna uses 0 as the horizon. We use 0 as the sky.
         # Get UE information
         ue_positions_m = df_ue_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single)
@@ -773,36 +802,43 @@ class ChannelSn(Saveable):
                                                    "antenna_config_ver_beta_mec_downtilt_deg",
                                                    "antenna_config_gamma_mec_slant_deg"]].to_numpy(dtype=np.single))
 
-        ue_velocity_ms = tools.kmh_to_ms(df_ue_ep[["velocity_x_kmh", "velocity_y_kmh", "velocity_z_kmh"]].to_numpy(dtype=np.single))
+        ue_velocity_ms = tools.kmh_to_ms(
+            df_ue_ep[["velocity_x_kmh", "velocity_y_kmh", "velocity_z_kmh"]].to_numpy(dtype=np.single))
         ue_indoor = df_ue_ep["indoor"].to_numpy(dtype=bool)
 
         # Get frequencies, and antenna arrays
+        # carrier_frequency_GHz = self.network_deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy(dtype=np.single)[mask]
         dl_carrier_frequency_GHz = cell_antenna_array_structure_obj.antenna_array_carrier_frequency_GHz
         cell_antenna_array_type_index = cell_antenna_array_structure_obj.antenna_array_type_index[mask]
         ue_antenna_array_type_index = ue_antenna_array_structure_obj.antenna_array_type_index
         dl_resource_grid_index = resrouce_grid_obj.dl_resource_grid_index
 
         # Get uniques
+        # carrier_frequency_GHz_set = set(carrier_frequency_GHz)
         cell_antenna_array_type_index_set = set(cell_antenna_array_type_index)
         ue_antenna_array_type_index_set = set(ue_antenna_array_type_index)
         dl_resource_grid_index_set = set(dl_resource_grid_index)
 
         # Iterate over unique combinations
+
         for model_params in itertools.product(cell_antenna_array_type_index_set,   #0
                                             ue_antenna_array_type_index_set,   #1
                                             dl_resource_grid_index_set):       #2
                                             # carrier_frequency_GHz_set
 
             # Derive masks for UEs and cells
+
             ue_antenna_array_type_mask = ue_antenna_array_type_index == model_params[1]
             cell_antenna_array_type_mask = cell_antenna_array_type_index == model_params[0]
-            ue_to_cell_mask = np.logical_and(ue_antenna_array_type_mask[:, np.newaxis], cell_antenna_array_type_mask)
+            ue_to_cell_mask = np.logical_and(ue_antenna_array_type_mask[:, np.newaxis],
+                                             cell_antenna_array_type_mask)
 
             # Configure tx/rx antenna array (must be the same for all tx/rx)
             scene.tx_array = cell_antenna_array_structure_obj.antenna_array_types[model_params[0]]
             scene.rx_array = ue_antenna_array_structure_obj.antenna_array_types[model_params[1]]
 
-            scene.synthetic_array = True  # If set to False, ray tracing will be done per antenna element (slower for large arrays)
+            # Note: whether antenna arrays are applied synthetically is now a PathSolver
+            # argument (synthetic_array) instead of a scene attribute. See below.
 
             for index, (x, y, z) in enumerate(cell_positions_m):
                 # Adjust positions relative to the scene center
@@ -811,7 +847,9 @@ class ChannelSn(Saveable):
                 adjusted_z = z  # Z coordinate remains unchanged
 
                 # Create transmitter
-                tx = Transmitter(name=f"tx_{index}", position=[adjusted_x, adjusted_y, adjusted_z], orientation=cell_orientations_rad[index])
+                tx = Transmitter(name=f"tx_{index}",
+                                 position=[adjusted_x, adjusted_y, adjusted_z], # type: ignore[arg-type]
+                                 orientation=cell_orientations_rad[index])
                 # Note that with sionna.rt.PlanarArray, the antennas are regularly spaced, located in the y-z plane.
                 # I.e., unlike 3GPP, in Sionna the 0 deg elevation points to the horizon.
 
@@ -825,22 +863,25 @@ class ChannelSn(Saveable):
                 adjusted_z = z  # Z coordinate remains unchanged
 
                 # Create receiver
-                rx = Receiver(name=f"rx_{index}", position=[adjusted_x, adjusted_y, adjusted_z], orientation=ue_orientations_rad[index])
+                rx = Receiver(name=f"rx_{index}",
+                              position=[adjusted_x, adjusted_y, adjusted_z], # type: ignore[arg-type]
+                              orientation=ue_orientations_rad[index])
 
                 # Add receiver to scene
                 scene.add(rx)
 
             #############################################################
             # Save images of the scene with all tx and rx
+
             resolution_for_rendering = [720, 720]   #[1920, 1080]    [720, 720]   [480, 320]  # increase for higher quality of renderings
             render_to_file = True  # Set to True to render image to file
-            num_samples_for_rendering = 64  # Enough: 256.    Set to 64 to speed this up
+            num_samples_for_rendering = 64     # Enough: 256.    Set to 64 to speed this up
 
             # Use bird's eye view camera and save image
             if render_to_file:
                 scene_image_file = "{}_birds_view.png".format(scene_name)
                 scene_image_file_path = os.path.join(scene_save_folder, scene_image_file)
-                scene.render_to_file(camera="birds_view", 
+                scene.render_to_file(camera=site_deployment_obj.cameras["birds_view"],
                                      filename=scene_image_file_path,
                                      resolution=resolution_for_rendering,
                                      num_samples=num_samples_for_rendering)
@@ -849,7 +890,7 @@ class ChannelSn(Saveable):
             if render_to_file:
                 scene_image_file = "{}_corner_view.png".format(scene_name)
                 scene_image_file_path = os.path.join(scene_save_folder, scene_image_file)
-                scene.render_to_file(camera="corner_view",
+                scene.render_to_file(camera=site_deployment_obj.cameras["corner_view"],
                                      filename=scene_image_file_path,
                                      resolution=resolution_for_rendering,
                                      num_samples=num_samples_for_rendering)
@@ -857,36 +898,30 @@ class ChannelSn(Saveable):
             #############################################################
             # Compute paths     (scene frequency already set in scenarios.py)
 
-            # Compute propagation paths
-            paths = scene.compute_paths(max_depth=3,  # number of bounces
-                                        num_samples=1e6,
-                                        los=True,
-                                        reflection=True,
-                                        diffraction=True,
-                                        scattering=False,
-                                        check_scene=True)
-            # "num_samples" is the #rays shot into directions defined by a Fibonacci sphere
+            # Compute propagation paths with the Sionna 2 PathSolver
+            # (replaces the removed scene.compute_paths())
+            p_solver = PathSolver()
+            paths = p_solver(scene,
+                             max_depth=3,  # number of bounces
+                             samples_per_src=1000000,
+                             synthetic_array=True,  # If set to False, ray tracing will be done per antenna element (slower for large arrays)
+                             los=True,
+                             specular_reflection=True,
+                             diffuse_reflection=False,
+                             refraction=False,  # Not simulated by the legacy compute_paths(); enable if transmission through surfaces is wanted
+                             diffraction=True)
+            # "samples_per_src" is the #rays shot per source
             # note that too few rays can lead to missing paths
 
             #############################################################
-            # Save the paths as an OBJ file for visualization in Blender
-
-            # To see it in Blender: Go to File > Import > Wavefront (.obj).
-            # Important: When importing int Blender, select Y-forward Z-up.
-            if render_to_file:
-                scene_image_file = "{}_paths.obj".format(scene_name)
-                scene_image_file_path = os.path.join(scene_save_folder,scene_image_file)
-                paths.export(scene_image_file_path)
-
-            #############################################################
             # Save images of the scene with all paths
+
             if render_to_file:
                 scene_image_file = "{}_paths_birds_view.png".format(scene_name)
                 scene_image_file_path = os.path.join(scene_save_folder, scene_image_file)
-                scene.render_to_file(camera="birds_view",
+                scene.render_to_file(camera=site_deployment_obj.cameras["birds_view"],
                                      paths=paths,
                                      show_devices=True,
-                                     show_paths=True,
                                      filename=scene_image_file_path,
                                      resolution=resolution_for_rendering,
                                      num_samples=num_samples_for_rendering)
@@ -894,10 +929,9 @@ class ChannelSn(Saveable):
             if render_to_file:
                 scene_image_file = "{}_paths_corner_view.png".format(scene_name)
                 scene_image_file_path = os.path.join(scene_save_folder, scene_image_file)
-                scene.render_to_file(camera="corner_view",
+                scene.render_to_file(camera=site_deployment_obj.cameras["corner_view"],
                                      paths=paths,
                                      show_devices=True,
-                                     show_paths=True,
                                      filename=scene_image_file_path,
                                      resolution=resolution_for_rendering,
                                      num_samples=num_samples_for_rendering)
@@ -905,27 +939,62 @@ class ChannelSn(Saveable):
             #############################################################
             # Compute channel response
 
-            # Methods of the class path here:
-            # https: // nvlabs.github.io / sionna / api / rt.html  # sionna.rt.Paths
-
-            # paths.normalize_delays = False
+            # Methods of the class Paths here:
+            # https://nvlabs.github.io/sionna/rt/api/paths.html
 
             # To compute Doppler shift: currently not used. Channel is approx as constant in each PRB.
-            # sampling_frequency = ...
-            # num_time_steps = ...
-            # paths.apply_doppler(sampling_frequency, num_time_steps, tx_velocities=(0.0, 0.0, 0.0), rx_velocities=(0.0, 0.0, 0.0))
-
-            a, tau = paths.cir(los=True, reflection=True, diffraction=True, scattering=True, num_paths=None)
+            # Time evolution is simulated via the sampling_frequency and num_time_steps
+            # arguments of paths.cfr() / paths.cir(), based on the Doppler shifts of all paths.
 
             # Get SN resource grid and create the frequency-domain channels
             rg = resrouce_grid_obj.dl_resource_grid[model_params[2]]
             num_subcarriers = rg.fft_size
             subcarrier_spacing = rg.subcarrier_spacing
-            frequencies = sionna.phy.ofdm.subcarrier_frequencies(num_subcarriers, subcarrier_spacing, dtype=tf.complex64)
-            ofdm_channel = sionna.phy.ofdm.cir_to_ofdm_channel(frequencies, a, tau, normalize=False)
+            frequencies = sionna.phy.channel.subcarrier_frequencies(num_subcarriers, subcarrier_spacing).cpu().numpy()
+            # paths.cfr() replaces the legacy paths.cir() + cir_to_ofdm_channel() combination.
+            # Path delays are normalized (normalize_delays=True by default) as with the legacy API.
+            h_freq = paths.cfr(frequencies=frequencies, normalize=False, out_type="torch")
+            # h_freq([num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, fft_size])
+            ofdm_channel = h_freq.unsqueeze(0)
+            # Output tensor: h_f([batch size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, fft_size])
 
             # Store channels
             ofdm_channels.append(ofdm_channel)
             ofdm_channel_assignment_b_to_a[ue_to_cell_mask] = len(ofdm_channels) - 1
 
         return ofdm_channels, ofdm_channel_assignment_b_to_a
+
+
+        '''
+        #############################################################
+        # Radio map (previously "coverage map")
+
+        # scene.coverage_map() was removed; Sionna 2 uses the RadioMapSolver class.
+        from sionna.rt import RadioMapSolver, Camera
+
+        rm_solver = RadioMapSolver()
+        rm = rm_solver(scene,
+                       max_depth=5,
+                       refraction=False,
+                       cell_size=(5., 5.),  # Grid size of radio map cells in m
+                       samples_per_tx=int(1e6))  # Reduce if your hardware does not have enough memory
+
+        # Create new camera above the transmitter
+        tx_pos = scene.transmitters["tx"].position.numpy()
+        above_tx_pos = tx_pos.copy()
+        above_tx_pos[-1] = 1000  # Set height of radio map camera to 1000m above tx
+        above_tx_pos[-2] -= 0.01  # Slightly move the camera for correct orientation
+        above_tx_cam = Camera(position=above_tx_pos, look_at=tx_pos)
+
+        if render_to_file:
+            scene_image_file = "scene_{}_coverage.png".format(scene_name)
+            scene_image_file_path = os.path.join(scene_save_folder, scene_image_file)
+            scene.render_to_file(camera=above_tx_cam,
+                                 radio_map=rm,
+                                 filename=scene_image_file_path,
+                                 resolution=resolution,
+                                 num_samples=64)
+
+        # rm.show_association();  # If multiple transmitters exist, shows which cells are associated to which transmitter
+        print("Radio map path gain: \n", rm.path_gain[0].numpy())
+        '''

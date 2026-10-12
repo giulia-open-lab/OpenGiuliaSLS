@@ -2,25 +2,18 @@
 """
 Created on Wed Apr 19 17:48:13 2023
 
-
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+@author: dalopezperez
 """
 
 import time
 import copy
 
 import numpy as np
+from abc import abstractmethod
 from typing import Any, Dict, List
 
 from giulia.tools.tools import log_calculations_time
 from giulia.outputs.saveable import Saveable
-
 
 class RSS(Saveable):
     """
@@ -33,6 +26,7 @@ class RSS(Saveable):
         compute_type: str,
         network_deployment_obj: Any,
         beam_conf_obj: Any,
+        time_frequency_resource_obj: Any,
         beam_precoded_channel_gain_ue_to_cell_obj: Any,
     ):
         """
@@ -51,16 +45,22 @@ class RSS(Saveable):
         self.compute_type: str = compute_type
         self.network_deployment_obj: Any = network_deployment_obj
         self.beam_conf_obj: Any = beam_conf_obj
+        self.time_frequency_resource_obj: Any = time_frequency_resource_obj
         self.beam_precoded_channel_gain_ue_to_cell_obj: Any = beam_precoded_channel_gain_ue_to_cell_obj
+        # Placeholder for base stations object
+        self.base_stations_obj: Any = object()
+        self.base_stations_obj: Any = object()
 
         # Outputs
-        self.RSS_results_per_frequency_layer: Dict[str, np.ndarray] = {}
+        # self.RSS_results_per_frequency_layer: Dict[str, np.ndarray] = {}
+        self.RSS_results_per_frequency_layer: Dict[str, Dict[str, Any]] = {}
 
 
-    def variables_list(self) -> List[str]:
+    @abstractmethod
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["RSS_results_per_frequency_layer"]
-    
+        return []
+
 
     def process(self, rescheduling_us: int = -1) -> int:
         """
@@ -78,10 +78,13 @@ class RSS(Saveable):
         # Extract network parameters
         
         # Number of beams
-        number_of_beams: np.ndarray = self.network_deployment_obj.df_ep[f"{self.beam_type}_number_of_beams"].to_numpy(dtype=int)
+        number_of_beams: np.ndarray = self.network_deployment_obj.df_ep[
+            f"{self.beam_type}_number_of_beams"
+        ].to_numpy(dtype=int)
         
         # TX power
-        BS_tx_power: np.ndarray = self.network_deployment_obj.df_ep[f"BS_tx_power_{self.beam_type}_RE_dBm"].to_numpy(dtype=np.single)
+        BS_tx_power: np.ndarray = getattr(self.base_stations_obj.bs_tx_power_obj, 
+                                               f"BS_tx_power_{self.beam_type}_RE_dBm")
 
         # Start performance timer
         t_start: float = time.perf_counter()
@@ -92,10 +95,13 @@ class RSS(Saveable):
             for frequency_key, frequency_layer_data in self.beam_precoded_channel_gain_ue_to_cell_obj.precoded_channel_gain_results_per_frequency_layer.items():
                 precoded_gain: np.ndarray = frequency_layer_data["precoded_channel_gain_b_to_a_dB"]
 
+                # Get the corresponding resource information for the current frequency layer
+                cells_in_frequency_mask = self.time_frequency_resource_obj.dl_frequency_layer_info[frequency_key]["cells_in_frequency_mask"]
+
                 # Compute RSS and store results
                 RSS_per_PRB_ue_to_cell_dBm = self._compute_rss(
-                    BS_tx_power[frequency_layer_data["cells_in_frequency_mask"]], 
-                    number_of_beams[frequency_layer_data["cells_in_frequency_mask"]], 
+                    BS_tx_power[cells_in_frequency_mask], 
+                    number_of_beams[cells_in_frequency_mask], 
                     precoded_gain
                 )
                 
@@ -110,7 +116,6 @@ class RSS(Saveable):
         log_calculations_time('RSS', t_start)
 
         return rescheduling_us
-
 
     def _compute_rss(
         self,
@@ -130,14 +135,27 @@ class RSS(Saveable):
             np.ndarray: RSS per PRB (dBm). Shape: (num_UE_antennas, num_beams).
         """
         # Extend TX power matrix from cell to UE x cell and UE x beam levels
-        extended_tx_power: np.ndarray = np.repeat(BS_tx_power[np.newaxis, :] * np.ones((precoded_gain.shape[1], 1)), number_of_beams, axis=1)
+        extended_tx_power: np.ndarray = np.repeat(
+            BS_tx_power[np.newaxis, :] * np.ones((precoded_gain.shape[1], 1)), number_of_beams, axis=1
+        )
 
         # Calculate RSS
-        return extended_tx_power + precoded_gain
+        out = extended_tx_power[None, :, :] + precoded_gain
+        return out
 
 
 class RSS_SSB(RSS):
-    pass
+    @property
+    def label(self) -> str: return 'ue_kpi'
+
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
 
 class RSS_CSI_RS(RSS):
-    pass
+    @property
+    def label(self) -> str: return 'ue_kpi'
+
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []

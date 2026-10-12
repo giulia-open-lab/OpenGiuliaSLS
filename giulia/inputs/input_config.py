@@ -1,21 +1,16 @@
-"""
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
-"""
-
-import os
-from typing import Any, Dict, List, Optional
+import os.path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
+import shutil
 
+from giulia import PROJ_DIR
+from giulia.inputs.config.OutputFormat import OutputFormat
+from giulia.inputs.config.parquet import ParquetFormat
+from giulia.inputs.config.npz import NPZFormat
 from giulia.inputs.run_config import RunConfig
-from giulia.logger import warning
-from giulia.outputs import OutputModule
+from giulia.logger import warning, debug
+
 
 class InputConfig:
     args: Dict[str, Any]
@@ -28,31 +23,28 @@ class InputConfig:
     All the configuration that sets how to run Giulia.
     """
 
-    output_compression: str
+    output_dir: Optional[str]
     """
-    Which compression method to use for the output files.
-    Options: none, zip.
-    """
-
-    rm_uncompressed: bool
-    """
-    If ``true``, the original output directory will be removed after completing the compression.
-    Doesn't apply if ``output_compression`` is "none".
+    The directory where to save the outputs.
     """
 
-    output_fields: List[str]
+    output_fields: Optional[List[str]]
     """
     A list of all the fields to give on the outputs file.
+    """
+
+    output_formats: List[OutputFormat]
+    """
+    A list of formats to use for Giulia's output.
     """
 
     def __init__(
             self,
             args: Dict[str, Any],
             run_config: RunConfig,
-            output_dir: str,
-            output_compression: str,
-            rm_uncompressed: bool,
-            output_fields: Optional[List[str]]
+            output_dir: Optional[str] = None,
+            output_fields: Optional[List[str]] = None,
+            output_formats: Optional[List[OutputFormat]] = None
     ):
         """
         Builds a new instance of ``InputConfig``.
@@ -61,35 +53,64 @@ class InputConfig:
             args: All the arguments to be passed to giulia_EV.
             output_fields: All the fields to give on the outputs file.
         """
-        self.args = args
+        self.args = args if args is not None else {}
         self.run_config = run_config
         self.output_dir = output_dir if output_dir is not None else output_dir
-        self.output_compression = output_compression
-        self.rm_uncompressed = rm_uncompressed
         self.output_fields = output_fields if output_fields is not None and len(output_fields) > 0 else None
-
+        self.output_formats = output_formats if output_formats is not None else [ParquetFormat()]
 
     @staticmethod
-    def load(file_path: str):
+    def load(file_path: Optional[str] = None) -> 'InputConfig':
+        config_file_path: str = file_path if file_path is not None else os.path.join(PROJ_DIR, 'config.yml')
+        if file_path is None:
+            debug('No input file provided. Defaulting to "config.yaml"')
+
+        if not os.path.exists(config_file_path) and file_path is None:
+            warning('"config.yaml" does not exist. Pre-filling the file with default values.')
+            example_file_path = os.path.join(PROJ_DIR, 'config.example.yml')
+            shutil.copyfile(example_file_path, config_file_path)
+
         # Read the file
-        with open(file_path, "r") as f:
+        with open(config_file_path, "r") as f:
             data = yaml.safe_load(f.read())
         args: Dict[str, Any] = data['args']
 
-        output_data = data['output']
+        output_data: Dict[str, Any] = data['output']
         run_config: RunConfig = RunConfig.from_config(data['run'])
         output_dir: str = output_data['directory']
-        output_compression: str = output_data['compression'] if 'compression' in output_data else 'zip' # zip/none
-        rm_uncompressed: bool = output_data['rm_uncompressed'] != 'false' if 'rm_uncompressed' in output_data else False # true/false, default true
-        output_fields: List[str] | None = output_data['fields']
+        output_fields: List[str] | None = output_data.get('fields')
+        output_formats_dict: Optional[Dict[str, Any]] = output_data.get('formats')
 
-        return InputConfig(args, run_config, output_dir, output_compression, rm_uncompressed, output_fields)
+        # Parse output formats
+        output_formats: List[OutputFormat] = []
+        if output_formats_dict is not None:
+            if 'parquet' in output_formats_dict:
+                config = ParquetFormat.parse(output_formats_dict['parquet'])
+                output_formats.append(config)
+            if 'npz' in output_formats_dict:
+                config = NPZFormat.parse(output_formats_dict['npz'])
+                output_formats.append(config)
+        else:
+            # By default, only parquet in raw format
+            output_formats = [ParquetFormat()]
 
+        return InputConfig(args, run_config, output_dir, output_fields, output_formats)
 
-    def run(self):
+    def run(self) -> Tuple[Callable, List[str]]:
+        """
+        Prepare the run: parse the arguments and resolve which Giulia entry
+        point to use.
+
+        Returns:
+            The resolved ``giulia_main`` callable and the parsed command-line
+            ``args``, ready to be invoked as ``giulia_main(args, self)``.
+        """
         # Convert the dictionary into proper command line arguments.
         # Also filter entries with null value
         args = list(f"--{k}={v}" for k, v in self.args.items() if v is not None)
+
+        if self.output_formats is None or len(self.output_formats) <= 0:
+            warning('No output formats specified. Giulia won\'t generate any outputs.')
 
         example = self.run_config.example
         if example is None:
@@ -109,15 +130,5 @@ class InputConfig:
         else:
             raise ValueError(f'Got an unknown example: {example}')
 
-        # Invoke the given main method
-        giulia_main(args)
-
-        # Right now the output module is completely decoupled from the main logic, so we have to call the export method
-        # manually. This should be automatic in the future once the conversion is thoroughly tested.
-        output_module = OutputModule(os.path.realpath(self.output_dir), self.output_compression, self.rm_uncompressed)
-        output_module.convert(
-            # Include npz files that are not intended for plotting, and are not already computed (mean, median)
-            filter_predicate=lambda file_name : file_name.endswith('.npz') and not file_name.startswith('to_plot') and not file_name.endswith('-mean.npz') and not file_name.endswith('-median.npz'),
-            # Filter NPY files based on the columns given
-            npy_filter=lambda file_name : self.output_fields is None or file_name in self.output_fields,
-        )
+        # Everything is set up: hand the entry point back to the caller.
+        return giulia_main, args

@@ -5,16 +5,13 @@ Created on Mon Mar 13 17:05:52 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import os
 import time
-from typing import List
+from abc import abstractmethod
+from typing import List, Dict
 
 import geopandas
 import numpy as np
@@ -25,6 +22,8 @@ from giulia.fs import data_driven_extras
 from giulia.tools import tools
 from giulia.tools.tools import log_calculations_time
 from giulia.outputs.saveable import Saveable
+
+from giulia.logger import error
 
 # Force CPU usage, prevent error with Mitsuba trying to use OptiX in load_scene()
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -43,11 +42,13 @@ class Site(Saveable):
         
         ##### Plots
         ########################
+
         self.plot = 0 # Switch to control plots if any
 
 
         ##### Input storage
         ########################
+        
         self.wraparound = wraparound
         self.playground_model = playground_model
         self.distribution = distribution
@@ -55,9 +56,10 @@ class Site(Saveable):
 
         ##### Outputs
         ########################
+
         self.hexagonal_layout = None
 
-        self.hex_layout_centre_m = None
+        self.layout_centre_m = (0.0, 0.0, 0.0)
         self.hex_layout_tiers = None
         self.isd_m = None
         self.grid_resol_m = None
@@ -83,27 +85,38 @@ class Site(Saveable):
         self.dataset_import_folder = data_driven_extras('loaded')
         self.dataset_export_folder = data_driven_extras('saved')
         self.scene = None
+        self.cameras = {}  # Cameras for rendering, keyed by name (cameras are no longer attached to the scene)
         self.scene_name = None
         self.scene_min_lat = None
         self.scene_max_lat = None
         self.scene_min_long = None
         self.scene_max_long = None
-        
 
-    def variables_list(self) -> List[str]:
+
+        ##### Process
+        ########################
+
+        #self.process()
+
+    # The class Site should be the only one without the expose_variables method, as an abstract class. 
+    # As the "plain" class is used internally in other playground (especcially for Hotspots), 
+    # and it is not necessary to export any variable from those.
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["playground_model"]
-    
+        return []
+
 
     def process(self, rescheduling_us=-1):
 
         ##### Start timer
         ########################  
+
         t_start = time.perf_counter()
 
 
         ##### Switch
         ########################
+
         self.hexagonal_layout = False
 
         if self.playground_model == "ITU_R_M2135_UMa" or\
@@ -112,19 +125,19 @@ class Site(Saveable):
             self.playground_model == "ITU_R_M2135_UMa_Umi_noncolocated_multilayer":
 
             self.hexagonal_layout = True
-            self.hex_layout_centre_m = (0, 0, 0)
+            self.layout_centre_m = (0, 0, 0)
             self.hex_layout_tiers = 2
             self.isd_m = 500
             self.min_BS_to_UE_2D_distance_m = 25
 
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = True
             
             self.ref_antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, -90])
             self.ref_number_of_sectors_per_site = 3
             self.grid_resol_m = (int)(10)
-
-
+            
+            
         elif self.playground_model == "3GPPTR36_814_Case_1" or\
             self.playground_model == "3GPPTR36_814_Case_1_omni" or \
             self.playground_model == "3GPPTR38_901_UMa_C1" or\
@@ -137,6 +150,10 @@ class Site(Saveable):
             self.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_ULA" or \
             self.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_UPA" or \
             self.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_Reflector" or \
+            self.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_TriReflector" or \
+            self.playground_model == "3GPPTR38_811_Dense_Urban_SingleHAPS_Reflector" or \
+            self.playground_model == "3GPPTR38_811_Dense_Urban_SingleHAPS_TriReflector" or \
+            self.playground_model == "3GPPTR38_811_Dense_Urban_HAPS_901_4G5G" or\
             self.playground_model == "3GPPTR38_811_Dense_Urban_NTN" or\
             self.playground_model == "3GPPTR38_811_Urban_NTN" or \
             self.playground_model == "3GPPTR38_901_4G" or \
@@ -147,23 +164,25 @@ class Site(Saveable):
             self.playground_model == "3GPPTR38_901_4G_5G2_multilayer" or \
             self.playground_model == "3GPPTR38_901_4G_5G6G_multilayer" or \
             self.playground_model == "3GPPTR38_901_4G_5G_6G_multilayer" or \
-            self.playground_model == "3GPPTR38_901_4G5G_cell_reselection":
+            self.playground_model == "3GPPTR38_901_4G5G_cell_reselection" or \
+            self.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G5G" or\
+            self.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_UPA_4G_5G" or\
+            self.playground_model == "3GPPTR38_811_Dense_Urban_singleHAPS_reflector_4G5G":
 
             self.hexagonal_layout = True
-            self.hex_layout_centre_m = (0, 0, 0)
+            self.layout_centre_m = (0, 0, 0)
             self.hex_layout_tiers = 2
             self.isd_m = 500
             self.min_BS_to_UE_2D_distance_m = 35
             if self.playground_model == "3GPPTR36_777_UMa_AV":
                 self.min_BS_to_AV_3D_distance_m = 10                
             
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = True
             
             self.ref_antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, -90])
             self.ref_number_of_sectors_per_site = 3
             self.grid_resol_m = (int)(10)
-
 
         elif self.playground_model == "3GPPTR36_814_Case_1_single_bs" or\
                 self.playground_model == "3GPPTR36_814_Case_1_single_bs_omni" or\
@@ -171,18 +190,17 @@ class Site(Saveable):
                 self.playground_model == "3GPPTR38_901_UMa_lsc_single_sector":
 
             self.hexagonal_layout = True
-            self.hex_layout_centre_m = (0, 0, 0)
+            self.layout_centre_m = (0, 0, 0)
             self.hex_layout_tiers = 0
             self.isd_m = 500
             self.min_BS_to_UE_2D_distance_m = 35
             
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = True
             
             self.ref_antenna_config_hor_alpha_mec_bearing_deg = np.array([0])
             self.ref_number_of_sectors_per_site = 1
             self.grid_resol_m = (int)(2)
-
 
         elif self.playground_model == "ITU_R_M2135_UMi" or\
                 self.playground_model == "3GPPTR38_901_UMi_C1" or\
@@ -193,37 +211,37 @@ class Site(Saveable):
                 self.playground_model == "3GPPTR36_777_UMi_AV":
 
             self.hexagonal_layout = True
-            self.hex_layout_centre_m = (0, 0, 0)
+            self.layout_centre_m = (0, 0, 0)
             self.hex_layout_tiers = 2
             self.isd_m = 200
             self.min_BS_to_UE_2D_distance_m = 10
             if self.playground_model == "3GPPTR36_777_UMi_AV":
                 self.min_BS_to_AV_3D_distance_m = 10
                 
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = True
             
             self.ref_antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, -90])
             self.ref_number_of_sectors_per_site = 3
             self.grid_resol_m = (int)(5)
-
-
+            
         elif self.playground_model == "3GPPTR38_901_UPi_fr3_lsc":
+
             self.hexagonal_layout = True
-            self.hex_layout_centre_m = (0, 0, 0)
+            self.layout_centre_m = (0, 0, 0)
             self.hex_layout_tiers = 2
             self.isd_m = 125
             self.min_BS_to_UE_2D_distance_m = 5
                 
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = True
             
             self.ref_antenna_config_hor_alpha_mec_bearing_deg = np.array([30, 150, -90])
             self.ref_number_of_sectors_per_site = 3
             self.grid_resol_m = (int)(5)            
-
-
+            
         elif self.playground_model == "circular":
+            
             self.grid_resol_m = (int)(2)
             self.isd_m = np.nan
             self.min_BS_to_UE_2D_distance_m = 10
@@ -234,11 +252,11 @@ class Site(Saveable):
             self.scenario_lower_left_conner_m = np.array(
                 (-self.scenario_x_side_length_m / 2, -self.scenario_y_side_length_m / 2))
             
-            if self.wraparound == None :
+            if self.wraparound == None:
                 self.wraparound = False   
-
-
+                
         elif self.playground_model == "rectangular":
+
             self.grid_resol_m = (int)(10)
             self.isd_m = np.nan
             self.min_BS_to_UE_2D_distance_m = 10
@@ -249,9 +267,9 @@ class Site(Saveable):
 
             if self.wraparound == None:
                 self.wraparound = False
-
-
+                
         elif self.playground_model == "3GPPTR36_814_Case_1_omni_dana":
+
             self.grid_resol_m = (int)(10)
             self.isd_m = np.nan
             self.min_BS_to_UE_2D_distance_m = 10
@@ -263,10 +281,11 @@ class Site(Saveable):
             if self.wraparound == None:
                 self.wraparound = False                
 
-
         elif self.playground_model == "dataset_rectangular":
+
             # Get the list of files in the directory that start with 'user_deployment'
-            user_deployment_files = [f for f in os.listdir(self.dataset_import_folder) if f.startswith('user_deployment')]
+            user_deployment_files = [f for f in os.listdir(self.dataset_import_folder) if
+                                     f.startswith('user_deployment')]
 
             # Check if there is more than one 'user_deployment' file
             if len(user_deployment_files) > 1:
@@ -304,7 +323,8 @@ class Site(Saveable):
             # Load ray tracing scene in Mitsuba format for the site_deployment_obj
 
             # Get the list of files in the directory that start with 'scene'
-            scene_files = [f for f in os.listdir(self.dataset_import_folder) if f.startswith('scene')]
+            scene_files = [f for f in os.listdir(self.dataset_import_folder) if
+                                     f.startswith('scene')]
 
             # Check if no file or more than one file matches the pattern
             if len(scene_files) == 0:
@@ -343,42 +363,54 @@ class Site(Saveable):
                 if i >= 10:
                     break
 
-            print("Scene center: ", self.scene.center.numpy())
-            print("Scene size: ", self.scene.size.numpy())
+            print("Scene center: ", self.scene.center.numpy()) # type: ignore
+            print("Scene size: ", self.scene.size.numpy()) # type: ignore
 
             # Create bird's eye view camera
-            bird_pos = [0, 0, 2000]
-            bird_pos[-2] -= 0.01  # Slightly move the camera for correct orientation
-            bird_cam = Camera("birds_view", position=bird_pos, look_at=[0, 0, 0])
-            self.scene.add(bird_cam)
+            bird_pos = [0.0, 0.0, 2000.0]
+            bird_pos[-2] -= 0.01
+            self.cameras["birds_view"] = Camera(position=bird_pos, look_at=[0.0, 0.0, 0.0]) # type: ignore
 
             # Create corner view camera
-            corner_view = Camera("corner_view", position=[800, 800, 200], look_at=[0, 0, 50])
-            self.scene.add(corner_view)
+            self.cameras["corner_view"] = Camera(position=[800.0, 800.0, 200.0], look_at=[0.0, 0.0, 50.0]) # type: ignore
 
-            if self.wraparound == None:
+            if self.wraparound is None:
                 self.wraparound = False
                 
-                
         else: 
-            raise ValueError(f"Error, site.playground_model not correctly specified. Value '{self.playground_model}' not admitted")
+            raise ValueError(
+                f"Error! In {self.__class__.__name__}, {self.__class__.__name__}.playground_model not correctly specified. Value '{self.playground_model}' not admitted.")
 
 
         ##### Create hexagonal grid
         ########################       
        
         if self.hexagonal_layout == True:
-
+            
             ##### Create hexagonal grid locations
             ########################  
-            self.define_hexagonal_layout(self.plot, self.hex_layout_centre_m, self.hex_layout_tiers, self.isd_m)
+
+            self.define_hexagonal_layout(self.plot, self.layout_centre_m, self.hex_layout_tiers, self.isd_m)
 
             ##### Store relevant variables
             ########################
+            # Basic Checks
+            if self.ref_number_of_sectors_per_site is None or self.ref_number_of_sectors_per_site <= 0:
+                raise ValueError(f"{self.__class__.__name__}: invalid or missing ref_number_of_sectors_per_site")
+            if self.ref_antenna_config_hor_alpha_mec_bearing_deg is None:
+                raise ValueError(f"{self.__class__.__name__}: missing ref_antenna_config_hor_alpha_mec_bearing_deg")
+
+            # Store number of cells and map cell to bearing
             self.ref_number_of_cell_sites = len(self.ref_cell_site_positions_m)
             self.ref_number_of_cells = self.ref_number_of_cell_sites * self.ref_number_of_sectors_per_site
 
-
+            self.map_cell_to_site = {
+                cell_idx: cell_idx // self.ref_number_of_sectors_per_site for cell_idx in range(self.ref_number_of_cells)
+            }
+            self.map_cell_to_bearing = {
+                cell_idx: float(self.ref_antenna_config_hor_alpha_mec_bearing_deg[ cell_idx % self.ref_number_of_sectors_per_site ]) 
+                    for cell_idx in range(self.ref_number_of_cells)
+            }
         ##### End
         ########################        
         log_calculations_time('Site deployment', t_start)
@@ -389,38 +421,84 @@ class Site(Saveable):
     def hexagonal_geographical_areas(self, cell_site_positions_m, hexagone_side_length_m):
         
        # Calculate cell site geographical area using Shapely
+       
        hexagons = [tools.generate_hexagon(cell_site_position_m, hexagone_side_length_m)  for cell_site_position_m in cell_site_positions_m]
        
        # Store using Geopandas
+       
        hexagons_gp = geopandas.GeoSeries(hexagons)  
 
        return hexagons, hexagons_gp        
-
-
+       
     def define_hexagonal_layout(self, plot, hex_layout_centre_m, hex_layout_tiers, isd_m):
        
        # Set scenario dimensions 
+       
        self.scenario_x_side_length_m = ( 2 + 3 * hex_layout_tiers) / np.sqrt(3) * isd_m + 2 
        self.scenario_y_side_length_m = (1+2*hex_layout_tiers) * isd_m 
        
        # Calculate scenario lower corner position 
+       
        self.scenario_lower_left_conner_m = np.array((-1*self.scenario_x_side_length_m/2, -1*self.scenario_y_side_length_m/2),dtype=np.single)    
            
        # Calculate length of hexagone size
+       
        self.hexagone_side_length_m = 1/np.sqrt(3) * isd_m 
        
        # Calculate bounded hexagone lower corner position 
+       
        self.hexagone_lower_left_conner_m = (-1*self.hexagone_side_length_m, -1*np.sqrt(3)*self.hexagone_side_length_m/2)     
 
        # Calculate cell site positions
+       
        self.ref_cell_site_positions_m = tools.create_hexagonal_layout(plot, hex_layout_centre_m, hex_layout_tiers, isd_m)   
        
        # Define cell site geographical area using Shapely and Geopandas
+       
        self.hexagons, self.hexagons_gp = self.hexagonal_geographical_areas(self.ref_cell_site_positions_m, self.hexagone_side_length_m)       
 
 
 # Create subclasses to differentiate the two deployments
 class Site_siteDeployment(Site):
-    pass
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            "": ""
+        }
+
 class Site_uePlaygroundDeployment(Site):
-    pass
+    def __init__(self, 
+                 simulation_config_obj,
+                 wraparound,
+                 playground_model, 
+                 distribution = None):
+        # Call the constructor of the parent class
+        super().__init__(wraparound, playground_model, distribution)
+        self.simulation_config_obj = simulation_config_obj
+
+    def process(self, rescheduling_us=-1) -> float:
+        # Call the process method of the parent class
+        rescheduling_us = super().process(rescheduling_us)
+        
+        # Add specific processing code for uePlaygroundDeployment if needed
+        #        
+        # Set number of Ue do be dpeloyed information in the simulation config
+        self.simulation_config_obj._set_ue_playground_deployment_obj(self)
+        self.simulation_config_obj._set_number_of_ues_per_UEsite_cell()
+        
+        return rescheduling_us
+      
+      
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
+
+    def expose_variable_labels(self) -> Dict[str, str]:
+        """Explicit per-variable routing — every variable is mapped, no label fallback."""
+        return {
+            "": ""
+        }

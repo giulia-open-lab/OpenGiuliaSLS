@@ -5,37 +5,33 @@ Created on Tue Mar 14 10:27:04 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
-
 import time
 import gc
+# import warnings
 import logging
 import os
 from math import sqrt, sin, cos, atan2
-from typing import Union
+from typing import Union, Sequence
+import hashlib
+import inspect
+
 
 import numpy as np
-import tensorflow as tf
+import pandas as pd
 import torch
 import trimesh
 from pyproj import Proj, transform, Transformer
 from shapely.geometry import Point, Polygon
 
 from giulia.logger import verbose, debug, info
-import pandas as pd
-import inspect
 
-from giulia.outputs.saveable import saveables
+from giulia.outputs.saveable import Saveable
 
 
 def int_nan():
     return -9999
-
 
 def calculate_area_square(length):  
     """  
@@ -43,8 +39,8 @@ def calculate_area_square(length):
     :param length: length of the square  
     :return: area of the square  
     """  
-    return length * length
 
+    return length * length
 
 def directory_exists(path):
 
@@ -52,42 +48,45 @@ def directory_exists(path):
    isExist = os.path.exists(path)
    
    if not isExist:
+    
       # Create a new directory because it does not exist
       os.makedirs(path)
       print("The new directory, " + path + ", is created!")
 
-
 def round_to_zero(num):
+        
    if np.abs(num) < 1e-10:
        num = 0.0
             
    return num 
 
-
 def magnitude(x, y, z):
+
     return sqrt(x * x + y * y + z * z)
 
-
 def cartesian_to_spherical(x, y, z):
+
     radius = magnitude(x, y, z)
     theta = atan2(sqrt(x * x + y * y), z)
     phi = atan2(y, x)
     
     return (radius, theta, phi) 
 
-
 def spherical_to_cartesian(radius, theta, phi):
+
     x = radius * cos(phi) * sin(theta)
     y = radius * sin(phi) * sin(theta)
     z = radius * cos(theta)
+    
     return (x, y, z)
-
-
+    
 def randinunithex(myrandom, isd):
+        
     #See https://www.redblobgames.com/grids/hexagons/, flat top orientation, for definition of width and size
     #In our case, the width is the ISD
     #Note that in this deployment method the size = 1, and that in a hexagonal grid, the size is equal to ISD / sqrt(3)
     scaling = isd/np.sqrt(3) 
+    #vectors = ampli * [(-1.,0),(.5,sqrt(3.)/2.),(.5,-sqrt(3.)/2.)]
     vectors = [(-1.0*scaling,0),(.5*scaling,sqrt(3.)/2.*scaling),(.5*scaling,-sqrt(3.)/2.*scaling)]
     x = myrandom.randrange(3);
     (v1,v2) = (vectors[x], vectors[(x+1)%3])
@@ -96,6 +95,7 @@ def randinunithex(myrandom, isd):
 
 
 def isBetween(start, end, mid) :   
+    
     end = (end - start) 
     if end < 0:
        end += 360 
@@ -106,8 +106,8 @@ def isBetween(start, end, mid) :
 
     return mid < end
 
-
 def angle_range_0_180(angle_deg):
+    
     if isinstance(angle_deg,(int,float)):
         if angle_deg > 180:
             angle_deg = angle_deg - 360
@@ -124,8 +124,8 @@ def angle_range_0_180(angle_deg):
             
     return angle_deg
 
-
 def angle_range_0_pi(angle_rad):
+    
     if isinstance(angle_rad,(int,float)):
         if angle_rad > np.pi:
             angle_rad = angle_rad - 2*np.pi
@@ -142,8 +142,8 @@ def angle_range_0_pi(angle_rad):
             
     return angle_rad
 
-
 def ms_to_kmh(velocity_ms):
+    
     # Conversion factor from m/s to km/h
     conversion_factor = 3.6
     
@@ -152,8 +152,8 @@ def ms_to_kmh(velocity_ms):
     
     return velocity_kmh
 
-
 def kmh_to_ms(velocity_kmh):
+    
     # Conversion factor from km/h to m/s
     conversion_factor = 1 / 3.6
     
@@ -162,24 +162,25 @@ def kmh_to_ms(velocity_kmh):
     
     return velocity_ms
 
-
 def mW_to_dBm(value_mW):
+    
     return 10 * np.log10(value_mW)
 
-
 def mW_to_dBm_torch(value_mW):
+    
     result = 10 * torch.log10(value_mW)
-    return result
-
+    
+    return result # result.cpu().numpy()
 
 def dBm_to_mW(value_dBm):
+    
     return np.power(10,value_dBm/10)
 
-
 def dBm_to_mW_torch(value_dBm):
-    result = torch.pow(10, value_dBm/10)
-    return result
 
+    result = torch.pow(10, value_dBm/10)
+    
+    return result # result.cpu().numpy()
 
 def isInsideHexagon(pos, center, h):
     
@@ -196,7 +197,6 @@ def isInsideHexagon(pos, center, h):
     
     return 2 * v * h - v * q2x - h * q2y >= 0   # finally the dot product can be reduced to this due to the hexagone symmetry
 
-
 def isInsideHexagon_pointy_top(pos, center, v):
     
     # pos = position of point to test
@@ -212,12 +212,10 @@ def isInsideHexagon_pointy_top(pos, center, v):
     
     return 2 * v * h - v * q2x - h * q2y >= 0   # finally the dot product can be reduced to this due to the hexagone symmetry
 
-
 def axial_to_oddq(q, r):
     col = q
     row = r + (q - (np.bitwise_and(q,1))) / 2
     return col, int(row)
-
 
 def oddq_to_axial(col, row):
     q = col
@@ -225,7 +223,6 @@ def oddq_to_axial(col, row):
     s = -q-r
     return q, int(r), int(s)
     
-
 def cube_direction_vectors(i):
     
     cube_direction_vectors = [(+1, 0, -1), 
@@ -236,14 +233,12 @@ def cube_direction_vectors(i):
                               (0, +1, -1)] 
     
     return cube_direction_vectors[i]
-
-
+    
 def cube_neighbor(q, r, s, i):
     
     cube_direction = cube_direction_vectors(i)
     
     return q + cube_direction[0], r + cube_direction[1], s + cube_direction[2]
-
 
 def create_hexagonal_layout(plot, hex_layout_centre_m, hex_layout_tiers, isd_m):
     
@@ -278,7 +273,9 @@ def create_hexagonal_layout(plot, hex_layout_centre_m, hex_layout_tiers, isd_m):
 
    # Calculate the position of each hexagone in the grid
    for j in range(0,samples) : # Loop over the y-axis
+      
        for i in range(0,samples) : # Loop over the x-axis
+           
            # Calculate x-position of the hexagon. In the x-axis hexagones are separated np.sqrt(3)/2 * isd_m meters
            gridx[i,j] = - offset_x_m + np.sqrt(3)/2 * isd_m * i # Calculate x-position
            
@@ -308,6 +305,7 @@ def create_hexagonal_layout(plot, hex_layout_centre_m, hex_layout_tiers, isd_m):
        col, row = axial_to_oddq(q, r)
        
        for i in range(0,6): # Loop over all sites in a tier using this and the next for-loop
+
            for j in range(0,tier):  
                
                # Find the location of the site in this hexagone by using the grid and the offset coordinates
@@ -321,7 +319,6 @@ def create_hexagonal_layout(plot, hex_layout_centre_m, hex_layout_tiers, isd_m):
                col, row = axial_to_oddq(q, r)
  
    return site_positions_m
-
 
 def create_sector(center, radius, start_angle, end_angle, num_points=100):
 
@@ -339,9 +336,30 @@ def create_sector(center, radius, start_angle, end_angle, num_points=100):
     
     # Create sector
     sector = Polygon(vertices)
+    
+    # # Plotting the sector
+    
+    # x, y = Polygon(vertices).exterior.xy
+    # plt.plot(x, y, color='blue', label='Sector')
+    
+    # # Plotting the center
+    # plt.scatter(*center, color='red', label='Center')
+    
+    # # Set axis labels
+    # plt.xlabel('X-axis')
+    # plt.ylabel('Y-axis')
+    
+    # # Set plot limits
+    # plt.xlim(center[0] - radius, center[0] + radius)
+    # plt.ylim(center[1] - radius, center[1] + radius)
+    
+    # # Add legend
+    # plt.legend()
+    
+    # plt.title('Sector shape')
+    # plt.show()    
 
     return sector
-
 
 def generate_hexagon(center, size):
     
@@ -356,9 +374,30 @@ def generate_hexagon(center, size):
     
     # Create hexagon
     hexagon = Polygon(zip(x_hexagon, y_hexagon))
+        
+    # # Plotting the hexagon
+    
+    # x, y = hexagon.exterior.xy
+    # plt.plot(x, y, color='blue', label='Hexagon')
+    
+    # # Plotting the center
+    # plt.scatter(*center, color='red', label='Center')
+    
+    # # Set axis labels
+    # plt.xlabel('X-axis')
+    # plt.ylabel('Y-axis')
+    
+    # # Set plot limits
+    # plt.xlim(center[0] - size, center[0] + size)
+    # plt.ylim(center[1] - size, center[1] + size)    
+    
+    # # Add legend
+    # plt.legend()
+    
+    # plt.title('Hexagon Shape with Shapely')
+    # plt.show()
     
     return hexagon
-
 
 def generate_random_points_within_polygon(hexagon, num_points):
     
@@ -376,14 +415,11 @@ def generate_random_points_within_polygon(hexagon, num_points):
 
     return points
 
-
 def order_i(m, M_H):
     return (m - 1) % M_H  # Horizontal index
 
-
 def order_j(m, M_H):
     return (m - 1) // M_H  # Vertical index 
-
 
 def translate_position_to_grid_point(ue_positions_m, ue_scenario_reference_m, scenario_resolution_m,
                                                shadowing_map_reference_m=None):
@@ -406,7 +442,6 @@ def translate_position_to_grid_point(ue_positions_m, ue_scenario_reference_m, sc
 
     return grid_point_index_x, grid_point_index_y
 
-
 def latlon_to_utm(latitudes, longitudes):
     """
     Convert arrays of latitude and longitude to UTM easting and northing in a batch.
@@ -426,6 +461,7 @@ def latlon_to_utm(latitudes, longitudes):
     eastings, northings = transformer.transform(longitudes, latitudes)
 
     return eastings, northings
+
 
 
 def geodetic_to_cartesian(lat, lon) -> tuple:
@@ -460,6 +496,8 @@ def cartesian_to_geodetic(x, y) -> tuple:
 
     lon, lat, _, _ = transform(cartesian, geographic, x, y)
     return lat, lon
+
+
 
 
 # Function to compute the signed distance of a point to the mesh
@@ -504,7 +542,10 @@ def check_point_in_buildings(point: Union[list, np.ndarray], ply_folder: str, th
             if ply_file == 'Plane.ply':
                 continue  # Skip checking this mesh
             # Load the mesh
-            mesh: trimesh.Trimesh = trimesh.load_mesh(os.path.join(ply_folder, ply_file))
+            mesh: trimesh.Trimesh = trimesh.load_mesh(os.path.join(ply_folder, ply_file)) # type: ignore
+
+            # if verbose:
+            #     print(f"Checking building: {ply_file}")
 
             # Compute signed distance for this mesh
             signed_distance = compute_signed_distance(point, mesh)
@@ -520,38 +561,37 @@ def check_point_in_buildings(point: Union[list, np.ndarray], ply_folder: str, th
         print(f"Point {point} is outside all buildings.")
     return False  # The point is outside all buildings
 
+def _get_caller_module():
+           """
+           Get the name of the calling module.
+           """
+           stack = inspect.stack()
+           caller_module = inspect.getmodule(stack[1][0])
+           if caller_module:
+               return caller_module.__name__
+           return None
 
 def free_memory(free_cpu=True, free_GPU=True):
-    """Frees CPU and GPU memory (PyTorch, TensorFlow)."""
-    
+    """Frees CPU and GPU memory (PyTorch)."""
+
+    t_start: float = time.perf_counter()
+
     if free_cpu:
         gc.collect()
-        
+
     # Clean GPU memory
     if free_GPU:
-        
+
         # Clean PyTorch GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-            torch.cuda.ipc_collect()
-            
-        # Clean TensorFlow memory
-        try:
-            # Save the current TensorFlow logger level
-            old_level = tf.get_logger().level
-            # Set the logger level to ERROR to suppress warnings
-            tf.get_logger().setLevel(logging.ERROR)
-            
-            tf.keras.backend.clear_session()
-            
-            # Restore the original logger level
-            tf.get_logger().setLevel(old_level)
-        except Exception as e:
-            print(f"Error clearing TensorFlow memory: {e}")
+
+
+    # Log elapsed time
+    log_calculations_time('Memory cleanup', t_start)
 
     return True
-
 
 def log_elapsed_time(name: str, t_start: float, debug_prints: bool = False):
     """
@@ -566,7 +606,6 @@ def log_elapsed_time(name: str, t_start: float, debug_prints: bool = False):
     verbose(f"{name}, elapsed time = {time.perf_counter() - t_start:0.4f}")
     debug(f"{name} run, elapsed time = {time.perf_counter() - t_start:0.2f} sec" if debug_prints else name, exclusive=True)
 
-
 def log_calculations_time(name: str, t_start: float):
     """
     Log elapsed time of execution of a calculation if log level is verbose, otherwise just prints ``name``.
@@ -577,17 +616,166 @@ def log_calculations_time(name: str, t_start: float):
     log_elapsed_time(f"{name} calculations", t_start)
 
 
+
+def _compute_sector_bearing_angular_regions(angles_deg):
+    """
+    Given a set of angles (one per vector), compute each vector's "influence sector".
+
+    Rules:
+    - Sector boundaries are defined as the angle bisectors between adjacent angles.
+    - Each vector owns the region between the previous bisector and the next one.
+    - Wrap-around is handled between the largest angle and the smallest angle + 360°.
+
+    Parameters
+    ----------
+    angles_deg : iterable of float
+        Angles of the vectors in degrees.
+
+    Returns
+    -------
+    regions : list of dict
+        List of region descriptors, sorted by original index.
+        Each entry contains:
+            {
+              "sorted_index": int,
+              "original_index": int,
+              "angle_deg": float,
+              "start_deg": float,
+              "end_deg": float
+            }
+
+    width_list : list of float
+        List of sector widths (in degrees), aligned with the original order.
+    """
+    angles_deg = np.asarray(angles_deg, dtype=float)
+    n = len(angles_deg)
+    if n < 2: raise ValueError("At least 2 vectors are required to define sectors.")
+
+    # Normalize and sort angles    
+    angles_mod = np.mod(angles_deg, 360.0)
+    order = np.argsort(angles_mod)
+    angles_sorted = angles_mod[order]
+    del angles_mod
+
+    # Compute angle bisector boundaries
+    boundaries = np.zeros(n, dtype=float)
+
+    # Bisectors between consecutive angles
+    for i in range(n - 1):
+        boundaries[i] = 0.5 * (angles_sorted[i] + angles_sorted[i + 1])
+
+    # Wrap-around bisector: last angle and first angle+360
+    last = angles_sorted[-1]
+    first = angles_sorted[0] + 360.0
+    boundaries[-1] = np.mod(0.5 * (last + first), 360.0)
+
+    # Build the list of regions in sorted angle order
+    regions_sorted = []
+    for i in range(n):
+        prev_idx = (i - 1) % n
+        start = boundaries[prev_idx]
+        end = boundaries[i]
+        angle = angles_sorted[i]
+
+        regions_sorted.append(
+            {
+                "sorted_index": i,
+                "original_index": int(order[i]),
+                "angle_deg": float(angle),
+                "start_deg": float(start),
+                "end_deg": float(end),
+            }
+        )
+
+    # Sort regions back to original vector order
+    regions = sorted(regions_sorted, key=lambda r: r["original_index"])
+
+    # Compute the sector widths (aligned with original order)
+    width_list = [
+        (r["end_deg"] - r["start_deg"]) % 360.0
+        for r in regions
+    ]
+
+    return regions, width_list
+
+
+def _get_sector_bearing_info_for_angle(angles_deg, angle_query_deg):
+    """
+    Determine which vector's sector contains the given query angle.
+
+    Parameters
+    ----------
+    angles_deg : iterable of float
+        Angles (in degrees) of the vectors that define sectors.
+    angle_query_deg : float
+        Angle to check (in degrees).
+
+    Returns
+    -------
+    dict
+        Sector owner information:
+        {
+          "owner_index": int,
+          "owner_angle_deg": float,
+          "start_deg": float,
+          "end_deg": float,
+          "width_deg": float
+        }
+
+    Raises
+    ------
+    ValueError
+        If the angle does not fall into any sector (degenerate configuration).
+    """
+    regions, _ = _compute_sector_bearing_angular_regions(angles_deg)
+
+    # Normalize query angle to [0, 360)
+    angle_q = np.mod(angle_query_deg, 360.0)
+
+    for r in regions:
+        start = r["start_deg"]
+        end = r["end_deg"]
+        width = (end - start) % 360.0
+
+        # Normal sector (no wrap-around)
+        if start < end:
+            inside = (angle_q >= start) and (angle_q < end)
+        else:
+            # Sector spans across 0° (wrap-around)
+            inside = (angle_q >= start) or (angle_q < end)
+
+        if inside:
+            return {
+                "owner_index": r["original_index"],
+                "owner_angle_deg": r["angle_deg"],
+                "start_deg": start,
+                "end_deg": end,
+                "width_deg": width,
+            }
+
+    raise ValueError(
+        "The query angle does not fall into any sector. "
+        "This may indicate a degenerate configuration."
+    )
+
+
+
+
 def log_saveable_available_results() -> None:
     """
     Log the available results that can be dynamically selected to be saved.
     """
+    # The registry lives in the current execution context (see
+    # docs/output-saveable/saveable-concurrency.md): this reports the Saveables of the
+    # simulation running on *this* thread, not of every simulation in the process.
+    saveables = Saveable.registry()
     info(f"There are {len(saveables)} saveable objects registered.")
     info("Structure:")
     for saveable in saveables:
         info(f"- {saveable.name}:")
-        for variable in saveable.variables_list():
+        for variable in saveable.expose_variables():
             info("  - %s" % variable)
-        
+
         
 class TrackedDataFrame(pd.DataFrame):
     """
@@ -605,13 +793,13 @@ class TrackedDataFrame(pd.DataFrame):
         self.attribute_access_count = 0
         self.attribute_access_points = []
 
+    
     def __getitem__(self, key):
-        # If the accessed key matches the one we want to track, log the access
-        if key == self.key_to_track:
+        # Only track if the key is a column name (a string)
+        if isinstance(key, str) and key == self.key_to_track:
             stack = inspect.stack()
             frame = stack[1]
             func_name = frame.function
-            # If 'self' is in the local variables, assume it's a method call and capture class name too
             if 'self' in frame.frame.f_locals:
                 instance = frame.frame.f_locals['self']
                 full_name = f"{instance.__class__.__name__}.{func_name}"
@@ -619,8 +807,57 @@ class TrackedDataFrame(pd.DataFrame):
                 full_name = func_name
             self.attribute_access_count += 1
             self.attribute_access_points.append(full_name)
+        
+        # Return the usual DataFrame result
         return super().__getitem__(key)
+        
+    # def copy(self, deep=True):
+    #     copied = super().copy(deep=deep)
+    #     for attr in self._metadata:
+    #         object.__setattr__(copied, attr, getattr(self, attr))
+        # return copied
     
     def reset_attribute_counter(self):
         self.attribute_access_count = 0
         self.attribute_access_points = []
+        
+
+
+def dataframe_hash_signature(df: pd.DataFrame,
+                        columns: Sequence[str] | None = None,
+                        use_index: bool = False) -> str:
+    """Return a deterministic, content-based SHA-256 fingerprint of a DataFrame.
+
+    Parameters
+    ----------
+    columns
+        If given, hash only this subset (see "hash only the relevant columns").
+    use_index
+        If False (default), the row index is ignored, so a purely positional
+        index (e.g. a RangeIndex left over from a filter) does not change the
+        fingerprint. Set True when the index is semantically meaningful.
+    """
+    if columns is not None:
+        df = df.loc[:, list(columns)]          # hash only the relevant subset
+
+    hasher = hashlib.sha256()
+
+    # (1) Schema: names + order + dtypes. repr() is stable for these objects.
+    schema = repr(list(df.columns)) + "||" + repr([str(dt) for dt in df.dtypes])
+    hasher.update(schema.encode("utf-8"))
+
+    # (2) Content: deterministic per-row hashes, then their raw bytes.
+    #     hash_pandas_object raises TypeError if any cell holds an unhashable value
+    #     (e.g. a list or a numpy array stored inside an object column). In that case,
+    #     stringify the offending object columns and retry, so the fingerprint stays
+    #     deterministic for such "weird" DataFrames.
+    try:
+        row_hashes = pd.util.hash_pandas_object(df, index=use_index)
+    except TypeError:
+        df = df.copy()
+        for col in df.columns[df.dtypes == object]:
+            df[col] = df[col].apply(repr)
+        row_hashes = pd.util.hash_pandas_object(df, index=use_index)
+    hasher.update(row_hashes.to_numpy().tobytes())
+
+    return hasher.hexdigest()

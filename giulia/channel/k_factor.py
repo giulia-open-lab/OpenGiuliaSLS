@@ -4,10 +4,7 @@ Created on Thu Mar 23 11:40:53 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import itertools
@@ -58,17 +55,19 @@ class KFactor(Saveable):
 
         ##### Input storage 
         ########################  
+
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj
         self.distance_angles_ue_to_cell_obj = distance_angles_ue_to_cell_obj
         self.LoS_probability_ue_to_cell_obj = los_probability_ue_to_cell_obj
 
-
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["K_factor_b_to_a_dB"]
-
+        return []
 
     def process(self, rescheduling_us: int = -1) -> int:
 
@@ -76,17 +75,21 @@ class KFactor(Saveable):
         ########################  
 
         # Random numbers
+
         self.rng = np.random.RandomState(self.simulation_config_obj.random_seed + 0)
 
         # Network
+
         self.bs_propagation_models = self.network_deployment_obj.df_ep["BS_propagation_model"].to_numpy()
         self.bs_fast_channel_models = self.network_deployment_obj.df_ep["BS_fast_channel_model"].to_numpy()
         self.site_id = self.network_deployment_obj.df_ep["site_ID"].to_numpy()
 
         # Users deployment 
+
         self.h_ut_m = self.ue_deployment_obj.df_ep[["position_z_m"]].to_numpy(dtype=np.single)
 
         # Channel characterisitics  
+
         self.zeniths_b_to_a_wraparound_degrees = self.distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees
         self.los_b_to_a = self.LoS_probability_ue_to_cell_obj.los_b_to_a
 
@@ -104,55 +107,78 @@ class KFactor(Saveable):
         ########################          
 
         # Find the set of unique propagation models to process them independently
+
         bs_propagation_models_set = set(self.bs_propagation_models)
         bs_fast_channel_models_set = set(self.bs_fast_channel_models)
 
         # Process each propagation model indepnedently
+
         for models in itertools.product(bs_propagation_models_set, bs_fast_channel_models_set):
 
             # Identify cells with the selected propagation model
 
             bs_propagation_model = models[0]
             bs_fast_channel_model = models[1]
-            mask = np.bitwise_and(bs_propagation_model == self.bs_propagation_models, bs_fast_channel_model == self.bs_fast_channel_models)
+            mask = np.bitwise_and(
+                bs_propagation_model == self.bs_propagation_models,
+                bs_fast_channel_model == self.bs_fast_channel_models
+            )
 
             # To maintain correlation acorss sites: Get unique elements, indices of the first occurrences, and inverse indices 
 
-            unique_elements, first_indices, inverse_indices = np.unique(self.site_id[mask], return_index=True, return_inverse=True)
+            unique_elements, first_indices, inverse_indices = np.unique(
+                self.site_id[mask],
+                return_index=True,
+                return_inverse=True
+            )
 
             # Get necessary information of the identified cells
+
             zeniths_b_to_a_wraparound_degrees = self.zeniths_b_to_a_wraparound_degrees[:, first_indices]
+
             los_b_to_a = self.los_b_to_a[:, first_indices]
 
             # Calculate K-factor loss
+
             k_factor = None
 
             if bs_propagation_model == "3GPPTR38_901_UMa" and bs_fast_channel_model != "3GPPTR38_901_UMa":
+
                 k_factor = self.k_factor_3gpptr38_901_uma(los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR38_901_UMi" and bs_fast_channel_model != "3GPPTR38_901_UMi":
+
                 k_factor = self.k_factor_3gpptr38_901_umi(los_b_to_a)
 
             elif bs_propagation_model == "ITU_R_M2135_UMa":
+
                 k_factor = self.k_factor_itu_r_m2135_uma(los_b_to_a)
 
             elif bs_propagation_model == "ITU_R_M2135_UMi":
+
                 k_factor = self.k_factor_itu_r_m2135_umi(los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR36_814_Case_1":
+
                 k_factor = self.k_factor_3gpptr36_814_case_1(los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR36_777_UMa_AV":
+
                 k_factor = self.k_factor_3gpptr36_777_uma_av(self.h_ut_m, los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR36_777_UMi_AV":
+
                 k_factor = self.k_factor_3gpptr36_777_umi_av(self.h_ut_m, los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR38_811_Urban_NTN":
+
                 k_factor = self.k_factor_3gpptr38_811_urban_ntn(zeniths_b_to_a_wraparound_degrees, los_b_to_a)
 
             elif bs_propagation_model == "3GPPTR38_811_Dense_Urban_NTN":
+
                 k_factor = self.k_factor_3gpptr38_811_dense_urban_ntn(zeniths_b_to_a_wraparound_degrees, los_b_to_a)
+
+                # Map back to all cells of the site using `np.take` to replicate the values according to `inverse_indices`
 
             if k_factor is not None:
                 self.K_factor_b_to_a_dB[:, mask] = np.take(k_factor, inverse_indices, axis=1)
@@ -160,7 +186,12 @@ class KFactor(Saveable):
         self.K_factor_b_to_a_dB = np.clip(self.K_factor_b_to_a_dB, 0, 10000)
 
         # Store in data frames the results as it may be useful to post process
-        self.df_K_factor_b_to_a_dB = pd.DataFrame(self.K_factor_b_to_a_dB, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])
+
+        self.df_K_factor_b_to_a_dB = pd.DataFrame(
+            self.K_factor_b_to_a_dB,
+            columns=self.network_deployment_obj.df_ep["name"],
+            index=self.ue_deployment_obj.df_ep["name"]
+        )
 
         ##### Save to plot
         ########################
@@ -175,7 +206,6 @@ class KFactor(Saveable):
 
         return rescheduling_us
 
-
     def k_factor_3gpptr38_901_uma(self, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
         # Initialize path loss results 
@@ -187,7 +217,6 @@ class KFactor(Saveable):
 
         return K_factor_b_to_a_dB
 
-
     def k_factor_3gpptr38_901_umi(self, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
         # Initialize path loss results
@@ -197,7 +226,6 @@ class KFactor(Saveable):
         K_factor_b_to_a_dB[los_b_to_a == True] = 9 + 5.0 * aux_rnd[los_b_to_a == True]
 
         return K_factor_b_to_a_dB
-
 
     def k_factor_itu_r_m2135_uma(self, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
@@ -209,7 +237,6 @@ class KFactor(Saveable):
 
         return K_factor_b_to_a_dB
 
-
     def k_factor_itu_r_m2135_umi(self, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
         # Initialize path loss results
@@ -219,7 +246,6 @@ class KFactor(Saveable):
         K_factor_b_to_a_dB[los_b_to_a == True] = 9 + 5 * aux_rnd[los_b_to_a == True]
 
         return K_factor_b_to_a_dB
-
 
     def k_factor_3gpptr36_814_case_1(self, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
@@ -231,7 +257,6 @@ class KFactor(Saveable):
 
         return K_factor_b_to_a_dB
 
-
     def k_factor_3gpptr36_814_uma(self, h_ut_m: np.single, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
         # Initialize path loss results
@@ -241,7 +266,6 @@ class KFactor(Saveable):
         K_factor_b_to_a_dB[los_b_to_a == True] = 9 + 3.5 * aux_rnd[los_b_to_a == True]
 
         return K_factor_b_to_a_dB
-
 
     def k_factor_3gpptr36_777_uma_av(self, h_ut_m: np.single, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
@@ -269,7 +293,6 @@ class KFactor(Saveable):
 
         return K_factor_b_to_a_dB
 
-
     def k_factor_3gpptr36_777_umi_av(self, h_ut_m, los_b_to_a: npt.NDArray) -> npt.NDArray:
 
         # Initialize path loss results
@@ -296,7 +319,6 @@ class KFactor(Saveable):
 
         return K_factor_b_to_a_dB
 
-
     def k_factor_3gpptr38_811_urban_ntn(
             self,
             zeniths_b_to_a_wraparound_degrees: npt.NDArray,
@@ -304,42 +326,72 @@ class KFactor(Saveable):
     ) -> npt.NDArray:
 
         # Initialize path loss results 
+
         K_factor_b_to_a_dB = np.zeros((np.size(los_b_to_a, 0), np.size(los_b_to_a, 1)))
 
         # Elevation angle 
+
         elevation_b_to_a_wraparound_degrees = zeniths_b_to_a_wraparound_degrees - 90
 
         # Calculate normal random variable to aid lognormal distribution
+
         aux_rnd = self.rng.randn(np.size(los_b_to_a, 0), np.size(los_b_to_a, 1))
 
         # Calculate mask for LoS and elevation range 
         # Calculate K-factor for LoS
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 0, elevation_b_to_a_wraparound_degrees < 15))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 0, elevation_b_to_a_wraparound_degrees < 15)
+        )
         K_factor_b_to_a_dB[mask] = 31.83 + 13.84 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 15, elevation_b_to_a_wraparound_degrees < 25))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 15, elevation_b_to_a_wraparound_degrees < 25)
+        )
         K_factor_b_to_a_dB[mask] = 18.78 + 13.78 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 25, elevation_b_to_a_wraparound_degrees < 35))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 25, elevation_b_to_a_wraparound_degrees < 35)
+        )
         K_factor_b_to_a_dB[mask] = 10.49 + 10.42 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 35, elevation_b_to_a_wraparound_degrees < 45))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 35, elevation_b_to_a_wraparound_degrees < 45)
+        )
         K_factor_b_to_a_dB[mask] = 7.46 + 8.01 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 45, elevation_b_to_a_wraparound_degrees < 55))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 45, elevation_b_to_a_wraparound_degrees < 55)
+        )
         K_factor_b_to_a_dB[mask] = 6.52 + 8.27 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 55, elevation_b_to_a_wraparound_degrees < 65))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 55, elevation_b_to_a_wraparound_degrees < 65)
+        )
         K_factor_b_to_a_dB[mask] = 5.47 + 7.26 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 65, elevation_b_to_a_wraparound_degrees < 75))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 65, elevation_b_to_a_wraparound_degrees < 75)
+        )
         K_factor_b_to_a_dB[mask] = 4.54 + 5.53 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 75, elevation_b_to_a_wraparound_degrees < 85))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 75, elevation_b_to_a_wraparound_degrees < 85)
+        )
         K_factor_b_to_a_dB[mask] = 4.03 + 4.49 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 85, elevation_b_to_a_wraparound_degrees < 90))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(elevation_b_to_a_wraparound_degrees >= 85, elevation_b_to_a_wraparound_degrees < 90)
+        )
         K_factor_b_to_a_dB[mask] = 3.68 + 3.14 * aux_rnd[mask]
 
         return K_factor_b_to_a_dB
@@ -351,9 +403,11 @@ class KFactor(Saveable):
     ) -> npt.NDArray:
 
         # Initialize path loss results 
+
         K_factor_b_to_a_dB = np.zeros((np.size(los_b_to_a, 0), np.size(los_b_to_a, 1)))
 
         # Elevation angle 
+
         elevation_b_to_a_wraparound_degrees = zeniths_b_to_a_wraparound_degrees - 90
 
         # Calculate normal random variable to aid lognormal distribution
@@ -362,31 +416,85 @@ class KFactor(Saveable):
         # Calculate mask for LoS and elevation range 
         # Calcualte K-factor for LoS   
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 0, elevation_b_to_a_wraparound_degrees < 15))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 0,
+                elevation_b_to_a_wraparound_degrees < 15
+            )
+        )
         K_factor_b_to_a_dB[mask] = 4.4 + 3.3 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 15, elevation_b_to_a_wraparound_degrees < 25))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 15,
+                elevation_b_to_a_wraparound_degrees < 25
+            )
+        )
         K_factor_b_to_a_dB[mask] = 9.4 + 6.6 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 25, elevation_b_to_a_wraparound_degrees < 35))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 25,
+                elevation_b_to_a_wraparound_degrees < 35
+            )
+        )
         K_factor_b_to_a_dB[mask] = 9.3 + 6.1 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 35, elevation_b_to_a_wraparound_degrees < 45))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 35,
+                elevation_b_to_a_wraparound_degrees < 45
+            )
+        )
         K_factor_b_to_a_dB[mask] = 7.9 + 4.0 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 45, elevation_b_to_a_wraparound_degrees < 55))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 45,
+                elevation_b_to_a_wraparound_degrees < 55
+            )
+        )
         K_factor_b_to_a_dB[mask] = 7.4 + 3.0 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 55, elevation_b_to_a_wraparound_degrees < 65))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 55,
+                elevation_b_to_a_wraparound_degrees < 65
+            )
+        )
         K_factor_b_to_a_dB[mask] = 7.0 + 2.6 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 65, elevation_b_to_a_wraparound_degrees < 75))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 65,
+                elevation_b_to_a_wraparound_degrees < 75
+            )
+        )
         K_factor_b_to_a_dB[mask] = 6.9 + 2.2 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 75, elevation_b_to_a_wraparound_degrees < 85))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 75,
+                elevation_b_to_a_wraparound_degrees < 85
+            )
+        )
         K_factor_b_to_a_dB[mask] = 6.5 + 2.1 * aux_rnd[mask]
 
-        mask = np.logical_and(los_b_to_a == True, np.logical_and(elevation_b_to_a_wraparound_degrees >= 85, elevation_b_to_a_wraparound_degrees < 90))
+        mask = np.logical_and(
+            los_b_to_a == True,
+            np.logical_and(
+                elevation_b_to_a_wraparound_degrees >= 85,
+                elevation_b_to_a_wraparound_degrees < 90
+            )
+        )
         K_factor_b_to_a_dB[mask] = 6.8 + 1.9 * aux_rnd[mask]
 
         return K_factor_b_to_a_dB

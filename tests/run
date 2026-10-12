@@ -3,4 +3,4 @@
 export PRECOMPUTED_FILES="${PRECOMPUTED_FILES:-/giulia/regression_test_dlp}"
 export SHADOWING_FILES="${SHADOWING_FILES:-/giulia/shadowing}"
 
-time python tests/test_main_program.py
+time python tests/run_tests.py $@

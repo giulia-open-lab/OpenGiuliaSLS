@@ -4,11 +4,7 @@ Created on Thu Mar 21 15:39:58 2024
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import time
@@ -26,8 +22,10 @@ class Cell_Re_Selection_Conf(Saveable):
        
        super().__init__()
         
+        
        ##### Plots 
        ########################
+        
        self.plot = 0 # Switch to control plots if any
 
        ##### Input storage 
@@ -37,6 +35,7 @@ class Cell_Re_Selection_Conf(Saveable):
 
        ##### Output  
        ########################   
+              
        self.df_q_Rx_Lev_Min_dBm = []
        self.df_s_search_P = []
        self.df_cell_reselection_priority = []
@@ -49,22 +48,28 @@ class Cell_Re_Selection_Conf(Saveable):
        #SrxLev > s-IntraSearchP
        #SrxLev > s-NonIntraSearchP
        
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'cell_kpi'
+
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["plot"]
+        return []
 
        
     def process(self, rescheduling_us=-1):  
         
         # Process inputs
+        
         self.dl_carrier_frequencies_GHz = self.network_deployment_obj.df_ep["dl_carrier_frequency_GHz"].to_numpy(dtype=np.single)  
         
         # Init outputs
+        
         cell_reselection_priority = np.full((len(self.network_deployment_obj.df_ep), len(self.network_deployment_obj.df_ep)), -1, dtype=np.single) 
         q_Rx_Lev_Min_dBm = np.full((len(self.network_deployment_obj.df_ep), len(self.network_deployment_obj.df_ep)), -1, dtype=np.single) 
         s_search_P = np.full((len(self.network_deployment_obj.df_ep), len(self.network_deployment_obj.df_ep)), -1, dtype=np.single) 
         
         # Start timer       
+       
         t_start = time.perf_counter() 
         
         # Calculate q_Rx_Lev_Min_dBm and s_search_P
@@ -80,15 +85,19 @@ class Cell_Re_Selection_Conf(Saveable):
         np.fill_diagonal(s_search_P, None) 
         
         # Find the set of frequencies to process them independently
+        
         dl_carrier_frequency_GHz_set = sorted(set(self.dl_carrier_frequencies_GHz))
         
         # Process each frequency independently
+            
         for priority, dl_carrier_frequency_GHz in enumerate(dl_carrier_frequency_GHz_set): 
             
             # Identify cells with the selected frequency
+            
             mask = dl_carrier_frequency_GHz ==  self.dl_carrier_frequencies_GHz
             
             # Provide parameters
+            
             cell_reselection_priority[:,mask] = priority 
             
             if priority == 1 :
@@ -96,21 +105,21 @@ class Cell_Re_Selection_Conf(Saveable):
             elif priority == 2 :
                 q_Rx_Lev_Min_dBm[:,mask] = -104
             
+        #np.fill_diagonal(self.cell_reselection_priority, None) 
+            
+
         # Store in data frames the results as it may be useful to post process
-        self.df_q_Rx_Lev_Min_dBm = pd.DataFrame(q_Rx_Lev_Min_dBm, 
-                                                columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])  
-        self.df_s_search_P = pd.DataFrame(s_search_P, 
-                                          columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])    
-        self.df_cell_reselection_priority = pd.DataFrame(cell_reselection_priority, 
-                                                         columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])  
+        
+        self.df_q_Rx_Lev_Min_dBm = pd.DataFrame(q_Rx_Lev_Min_dBm, columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])  
+        self.df_s_search_P = pd.DataFrame(s_search_P, columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])    
+        self.df_cell_reselection_priority = pd.DataFrame(cell_reselection_priority, columns=self.network_deployment_obj.df_ep["name"], index=self.network_deployment_obj.df_ep["name"])  
 
           
         ##### End
         log_elapsed_time('Cell (re)selection parameters', t_start)
         
         return rescheduling_us
-
-
+    
 class Cell_Re_Selection(Saveable):
     
     def __init__(self,
@@ -144,25 +153,26 @@ class Cell_Re_Selection(Saveable):
         self.best_serving_beam_ID_per_ue = []
         self.best_serving_cell_ID_per_ue = []
 
-
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return [
-            "best_serving_beam_ID_per_ue",
-            "best_serving_cell_ID_per_ue"
-        ]
+        return []
     
         
     def process(self, rescheduling_us=-1):
                 
         ##### Start timer
         ########################
+       
         t_start = time.perf_counter() 
         
         ##### Switch
         ########################          
 
         # Calculate cell reselection: the UE reselects to the cell with highest priority and RSRP   
+
         if self.compute_type == 'priority_plus_strongest_rsrp':
             
             self.best_serving_beam_ID_per_ue, self.best_serving_cell_ID_per_ue =\
@@ -175,7 +185,11 @@ class Cell_Re_Selection(Saveable):
                 
             self.best_serving_cell_ID_per_ue_obj.best_serving_beam_ID_per_ue =  self.best_serving_beam_ID_per_ue
             self.best_serving_cell_ID_per_ue_obj.best_serving_cell_ID_per_ue =  self.best_serving_cell_ID_per_ue
-                                
+                
+        # np.savez("debug_data.npz", 
+        #           best_serving_beam_ID_per_ue=self.best_serving_beam_ID_per_ue,
+        #           best_serving_cell_ID_per_ue=self.best_serving_cell_ID_per_ue)                  
+                
         ##### End
         log_calculations_time('Cell reselection', t_start)
         
@@ -192,45 +206,60 @@ class Cell_Re_Selection(Saveable):
         
         # Get beam to cell mapping
         if beam_conf_obj is None:  # One beam per cell, as in LTE
+        
             beam_to_node_mapping = np.arange(0, np.size(rsrp_ue_to_cell_dBm, 1)).astype(int)
             number_of_beams = np.ones(np.size(rsrp_ue_to_cell_dBm, 1), dtype=int)
             
         else:  # Multiple beams per cell, as in NR
+        
             beam_to_node_mapping = beam_conf_obj.beam_to_node_mapping
             number_of_beams = beam_conf_obj.number_of_beams_per_node
     
         # Get cell reselection priorities [cell x cell]
             # It is important to use the pandas dataframes and not the numpy arrays as these values may be modified over the top by an optimizer
-                    
+        
+        #cell_reselection_priority = cell_re_selection_conf_obj.cell_reselection_priority   
+        #q_Rx_Lev_Min_dBm = cell_re_selection_conf_obj.q_Rx_Lev_Min_dBm 
+        #s_search_P = cell_re_selection_conf_obj.s_search_P
+                
         q_Rx_Lev_Min_dBm = cell_re_selection_conf_obj.df_q_Rx_Lev_Min_dBm.to_numpy(dtype=np.single) 
         s_search_P = cell_re_selection_conf_obj.df_s_search_P.to_numpy(dtype=np.single)  
         cell_reselection_priority = cell_re_selection_conf_obj.df_cell_reselection_priority.to_numpy(dtype=np.single)
+        
     
         # Create a new 2D array to store user-cell priorities [ue x cell]
+        
         num_ue = len(best_serving_cell_ID_per_ue)
         cell_reselection_priority_ue_to_cell = np.zeros((num_ue, cell_reselection_priority.shape[1])) 
         q_Rx_Lev_Min_ue_to_cell_dBm = np.zeros((num_ue, q_Rx_Lev_Min_dBm.shape[1]), dtype=np.single) 
         s_search_P_ue_to_cell = np.zeros((num_ue, s_search_P.shape[1]), dtype=np.single) 
     
         # Find the priorities per ue based on its serving cell broadcast information [ue x cell]
+        
         for i, server_index in enumerate(best_serving_cell_ID_per_ue):
             cell_reselection_priority_ue_to_cell[i, :] = cell_reselection_priority[server_index, :]
             q_Rx_Lev_Min_ue_to_cell_dBm[i, :] = q_Rx_Lev_Min_dBm[server_index, :]   
             s_search_P_ue_to_cell[i, :] = s_search_P[server_index, :] 
     
         # Resize for the beam case
+        
         cell_reselection_priority_ue_to_beam = np.repeat(cell_reselection_priority_ue_to_cell, number_of_beams, axis=1)   
         q_Rx_Lev_Min_ue_to_beam_dBm = np.repeat(q_Rx_Lev_Min_ue_to_cell_dBm, number_of_beams, axis=1) 
+        #s_search_P_ue_to_beam = np.repeat(s_search_P_ue_to_cell, number_of_beams, axis=1)        
         
         # Initialize arrays to store the new best serving beam/cell IDs
+        
         new_best_serving_beam_ID_per_ue = np.full(num_ue, -1, dtype=int)
         new_best_serving_cell_ID_per_ue = np.full(num_ue, -1, dtype=int)
     
         # Iterate over each UE and determine the best serving cell/beam based on priority and RSRP
+        
         for user_ID in range(num_ue):
+            
             found_serving_beam = False  # Flag to track if a valid serving beam is found
             
             # Iterate through the unique priorities in descending order
+            
             for priority in sorted(np.unique(cell_reselection_priority_ue_to_beam[user_ID, :]), reverse=True):
                 
                 # If the UE is already associated to a cell with this priority we do not need to process more data
@@ -244,28 +273,39 @@ class Cell_Re_Selection(Saveable):
                 SrxLev = rsrp_ue_to_cell_dBm[user_ID, cells_with_same_max_priority] #- q_Rx_Lev_Min_ue_to_beam_dBm[user_ID, cells_with_same_max_priority]
                 
                 if len(cells_with_same_max_priority) > 1:
+                    
                     # Multiple cells with the same priority, choose the one with the strongest RSRP
                     strongest_SrxLev_index = np.argmax(SrxLev)
                     strongest_beam_ID = cells_with_same_max_priority[strongest_SrxLev_index]
                 else:
+                   
                     # Only one cell/beam with this priority
                     strongest_beam_ID = cells_with_same_max_priority[0]
                 
                 # Check if the strongest RSRP meets the minimum threshold
+                
                 if rsrp_ue_to_cell_dBm[user_ID, strongest_beam_ID] > q_Rx_Lev_Min_ue_to_beam_dBm[user_ID, strongest_beam_ID]:
+                    
                     new_best_serving_beam_ID_per_ue[user_ID] = strongest_beam_ID
                     found_serving_beam = True
                     break  # Exit the loop once a valid beam is found
     
             if not found_serving_beam:
+               
                 # If no beam was found with valid RSRP, stick with the current serving cell
                 new_best_serving_beam_ID_per_ue[user_ID] = best_serving_beam_ID_per_ue[user_ID]
                 new_best_serving_cell_ID_per_ue[user_ID] = best_serving_cell_ID_per_ue[user_ID]
                 
             else:
+                
                 # Map the selected beam back to the corresponding cell
                 new_best_serving_cell_ID_per_ue[user_ID] = beam_to_node_mapping[new_best_serving_beam_ID_per_ue[user_ID]]
-                    
+                
+        # np.savez("debug_data.npz", 
+        #           rsrp_ue_to_cell_dBm=rsrp_ue_to_cell_dBm,
+        #           new_best_serving_cell_ID_per_ue = new_best_serving_cell_ID_per_ue,
+        #           new_best_serving_beam_ID_per_ue = new_best_serving_beam_ID_per_ue) 
+    
         return new_best_serving_beam_ID_per_ue, new_best_serving_cell_ID_per_ue    
     
 

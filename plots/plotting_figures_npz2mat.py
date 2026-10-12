@@ -5,13 +5,6 @@ Created on Tue Feb 20 2024
 This script convert all saved npz files with the prefix 'to_plot_'
 to mat equivalents and saves them in a different folder
 
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
 """
 
 import os

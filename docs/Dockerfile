@@ -29,5 +29,6 @@ RUN make -C /docs/ html
 
 FROM httpd:2.4-alpine
 
-# Copy the built HTML files to the web server
-COPY --from=build /docs/build/html/ /usr/localapache2/htdocs/
+# Copy the built HTML files to the web server.
+# The path must be /usr/local/apache2/htdocs/ — httpd serves nothing otherwise.
+COPY --from=build /docs/build/html/ /usr/local/apache2/htdocs/

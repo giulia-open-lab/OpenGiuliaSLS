@@ -4,13 +4,13 @@ This page covers how to launch a simulation once your environment is set up. For
 
 ## Preparing the config file
 
-Giulia expects a YAML config file. The repository ships a fully commented template at [`config.example.yml`](../config.example.yml). The recommended workflow is to copy it to `config.yml` and edit in place:
+Giulia expects a YAML config file. The repository ships a fully commented template at [`config.example.yml`](../config.example.yml), and a `config.yml` that runs a heavy 4G/5G multilayer scenario. The recommended workflow is to copy the template to `config.yml` (this replaces the `config.yml` of the repository) and edit in place:
 
 ```shell
 cp config.example.yml config.yml
 ```
 
-By default `main.py` looks for `config.yml` next to itself; you can also pass an explicit path on the command line (see "Launching" below).
+By default `main.py` looks for `config.yml` next to itself, and creates it from `config.example.yml` if it does not exist; you can also pass an explicit path on the command line (see "Launching" below).
 
 The config file has three top-level sections: `args`, `run`, and `output`.
 
@@ -24,32 +24,58 @@ Controls the simulator's behaviour. The meaningful keys:
 - `ue_distribution` — how UEs are scattered: `grid`, `uniform`, `uniform_with_hotspots`, `inhomogeneous_per_cell`, or `inhomogeneous_per_cell_with_hotspots`.
 - `ue_mobility` — UE mobility. Empty / `null` for static UEs; otherwise `straight_walk` or `circular_walk`.
 - `link_direction` — `downlink`, `uplink`, or `downlink_uplink`.
-- `wraparound` — true/false. Enables network-topology wraparound for interference at the edges of the playground.
+- `wraparound` — enables network-topology wraparound for interference at the edges of the playground. Leave it empty to use the scenario default (on for the hexagonal ITU and 3GPP layouts); see [Boolean entries](#boolean-entries).
 - `snapshots` — number of simulation snapshots (a positive integer). The random seed increments by one per snapshot.
-- `enable_GPU` — true/false. Set to `false` to force CPU execution.
-- `regression` — true/false. Enables the regression-test mode used by the test harness.
-- `log_level` — integer in `[0, 4]` (higher is more verbose).
-- `save_results` — `0` (do not save) or `1` (save).
-- `plots` — true/false. Generate plots in addition to data files.
+- `enable_GPU` — see [Boolean entries](#boolean-entries): `false` is currently read as true. To force CPU execution, start Giulia with `CUDA_VISIBLE_DEVICES=""`.
+- `regression` — stored in the simulation configuration, but not read by the simulator modules.
+- `log_level` — integer in `[0, 4]`. **Lower is more verbose**: `0` = VERBOSE, `1` = DEBUG,
+  `2` = INFO, `3` = WARNING, `4` = ERROR (see `giulia/logger.py`). Set `0` to see everything and
+  `4` to see only errors.
+- `save_results` — stored in the simulation configuration, but not read by the simulator modules: the export is
+  controlled by `output.formats` only (with `save_results: 0` the files are still written).
+- `plots` — when on, writes the data of the diagnostic plots (`to_plot_*.npz` files) for the first episode into
+  `outputs/results/<project>/` inside the repository. Leave it empty to keep it off; see [Boolean entries](#boolean-entries).
+
+#### Boolean entries
+
+The `args` entries are passed to the entry point as command-line text (`--plots=False`), and the entry point parses
+the boolean options with Python's `bool()`, for which any non-empty text is true. The value `false` is therefore read
+as **true** for `enable_GPU`, `wraparound`, `regression` and `plots`. Leave an entry empty to use its default: `plots`
+and `regression` are off by default, and an empty `wraparound` follows the scenario.
 
 ### `run` section
 
-Selects which example script `main.py` dispatches to via the `example` key. Supported values, dispatched in `giulia/inputs/input_config.py`:
+Selects which example script `main.py` dispatches to via the `example` key. The names below are accepted by `giulia/inputs/input_config.py`, but **only `EV` currently runs through `main.py`**: `EV_batch` stops with `ModuleNotFoundError`.
 
 - `EV` — runs `examples/giulia_EV.py`. The standard end-to-end run, parameterised by the `args` block above.
 - `EV_batch` — runs `examples/giulia_EV_batch.py`. Internally batches multiple runs; the `args` block from the YAML is **not** propagated (the script defines its own sweep).
-- `EV_EE_UEassociation` — runs `examples/giulia_EV_EE_UEassociation.py`. Energy-efficiency-oriented run focused on UE-cell association.
-- `EV_EE_UEassociation_batch` — runs `examples/giulia_EV_EE_UEassociation_batch.py`. Batched variant of the previous.
-- `EV_HapsSym_Reflector` — runs `examples/giulia_EV_HapsSym_Reflector.py`. Specialised run for the HAPS reflector NTN scenario.
 
 ### `output` section
 
-Controls where the results land:
+Controls where the results land and in which formats. Parsed in
+[`giulia/inputs/input_config.py`](../giulia/inputs/input_config.py):
 
-- `directory` — output directory, absolute or relative to the repo root. Default: `outputs/outputs`.
-- `compression` — `none` (write raw Parquet folder structure) or `zip` (compress the result into a single zip).
-- `rm_uncompressed` — true/false. Only used when `compression` is `zip`. If true, the uncompressed Parquet folder is deleted after compression.
-- `fields` — a YAML list of output fields to include. If empty or omitted, all available fields are exported. The example `config.example.yml` enumerates all the standard KPI fields (best serving cell IDs, RSRP/RSS variants, SINR, throughput, cell activity, network power consumption, and so on).
+- `directory` — output directory of the Parquet datasets and their schemas, absolute or relative to the folder
+  from which Giulia is started. In `config.example.yml` it is `outputs/gof`. The NPZ archive does not use it (see
+  [Where outputs land](#where-outputs-land)).
+- `formats` — a mapping of the output formats to produce. The two supported keys are `npz` and
+  `parquet`; both can be enabled at the same time, and they are written **independently** (Parquet
+  is not a post-hoc conversion of the `.npz` files). If the whole `formats` block is omitted,
+  Giulia defaults to Parquet only, partitioned and packed into `.gof` archives, with the uncompressed folders removed.
+  - `formats.npz.enable` — true/false. Writes the legacy `.npz` result archives.
+  - `formats.parquet.enable` — true/false. Writes the Parquet datasets described in
+    [Reading Parquet Output](output-saveable/reading-parquet.md).
+  - `formats.parquet.compression` — `none` (leave the raw Parquet folder structure) or `zip`
+    (compress it into a single archive, which Giulia names with a `.gof` extension — "Giulia
+    Output File").
+  - `formats.parquet.rm_uncompressed` — true/false. Only meaningful when `compression` is `zip`:
+    if true, the uncompressed Parquet folder is deleted once the archive exists.
+  - `formats.parquet.use_partition_cols` — true/false. If true, the data is written as a
+    partitioned Parquet dataset (`episode_idx=…/step_idx=…/` folders) instead of a single file
+    per label. If omitted, it defaults to `true`; the config files of the repository set it to `false`.
+- `fields` — a YAML list of output columns to keep. If empty or omitted, **all** available columns
+  are exported. Names are Saveable column names in `<ClassName>.<variable_name>` form (for example
+  `SINR_SSB.sinr_ue_to_cell_dB`); see [Where outputs land](#where-outputs-land) below.
 
 ## Launching
 
@@ -65,24 +91,65 @@ To use a config at a different path:
 python main.py path/to/config.yml
 ```
 
-`main.py` reads the YAML, dispatches to the example script chosen in `run.example`, and then runs the output module to convert `.npz` files to Parquet.
+`main.py` reads the YAML, resolves the example entry point chosen in `run.example`, and calls it. The
+example drives the snapshot loop and writes the results in the formats enabled under
+`output.formats`.
 
 ## Where outputs land
 
-After a successful run, results live under the directory configured in `output.directory` (default `outputs/outputs`). Internally, each saveable component of the pipeline writes one or more `.npz` files; the output module then converts them to Parquet, keyed by the field name. The Parquet output is a folder (one file per field) by default.
+After a successful run, the Parquet datasets and their schemas live under the directory configured in
+`output.directory` (`outputs/gof` in `config.example.yml`). The legacy NPZ archive (`results-raw.npz`) and, when
+`plots` is on, the `to_plot_*.npz` files are always written to `outputs/results/<project>/` inside the repository.
 
-If you set `output.compression: zip`, the output module zips the Parquet folder. If `rm_uncompressed: true`, the uncompressed copy is deleted after the zip is created.
+The Parquet output is **not** one file per field. It is one dataset **per label**, named
+`<project_name>_<label>`, where the label says what a row represents:
 
-The list of standard fields exposed in the Parquet output is the one in `config.example.yml`, which includes:
+| Dataset | One row per… |
+|---|---|
+| `<project>_generic` | `(episode, step)` — each KPI cell holds the whole vector for that step; written only when a Saveable is routed to `generic`, which is not the case in a standard run |
+| `<project>_ue_kpi` | `(episode, step, ue_id)` — one scalar per UE |
+| `<project>_cell_kpi` | `(episode, step, cell_id)` — one scalar per cell |
+| `<project>_ru_kpi`, `<project>_bbu_kpi`, … | `(episode, step, <entity>_id)` — one scalar per entity |
 
-- Cell-association: `best_serving_cell_ID_per_ue_based_on_CRS`, `best_serving_cell_ID_per_ue_based_on_SSB`, `best_serving_SSB_per_ue`, `best_serving_CSI_RS_per_ue`.
-- RSRP / RSS / coupling gain: `best_serving_CRS_rsrp_per_ue_dBm`, `best_serving_SSB_rsrp_per_ue_dBm`, `best_serving_CSI_RS_rsrp_per_ue_dBm`, `best_serving_CRS_coupling_gain_dB`, `best_serving_SSB_coupling_gain_dB`, `CRS_RSRP_no_fast_fading_ue_to_cell_dBm`, `SSB_RSRP_no_fast_fading_ue_to_cell_dBm`.
-- Distances: `best_serving_CRS_distance_3d_m`, `best_serving_SSB_distance_3d_m`.
-- SINR / interference: `CRS_sinr_ue_to_cell_dB`, `SSB_sinr_ue_to_cell_dB`, `effective_CSI_RS_sinr_ue_to_cell_dB`, `CRS_interfPower_ue_dBm`, `SSB_interfPower_ue_dBm`, `CSI_RS_interfPower_ue_dBm`, `CRS_usefulPower_ue_dBm`, `SSB_usefulPower_ue_dBm`, `CSI_RS_usefulPower_ue_dBm`.
-- Throughput: `carrier_throughput_Mbps`, `cell_throughput_Mbps`, `ue_throughput_per_carrier_Mbps`, `ue_throughput_based_on_eff_CSI_RS_SINR_per_PRB_Mbps`, `ue_throughput_based_on_ins_CSI_RS_SINR_per_PRB_Mbps`.
-- Activity / counts: `cell_activity_per_ue`, `SSB_beam_activity_per_ue`, `CSI_RS_beam_activity_per_ue`, `ues_per_cell`, `ues_per_cell_based_on_CRS`, `ues_per_SSB_beam`, `ues_per_CSI_RS_beam`.
-- Energy: `network_power_consumption_kW`.
-- Noise: `best_serving_CRS_re_noise_per_ue_dBm`, `best_serving_SSB_re_noise_per_ue_dBm`.
+Each dataset is written next to a `<dataset>.schema.md` sidecar listing every column and its type —
+the quickest way to see what a run actually produced. Which file a variable lands in is decided in
+code by its Saveable `label`, not by the config; see
+[Saveable Output & Export](output-saveable/saveable-output.md) for the full model, and
+[Reading Parquet Output](output-saveable/reading-parquet.md) for how to read the files back.
+
+If you set `output.formats.parquet.compression: zip`, the Parquet folder is compressed into a single
+`.gof` archive. If `rm_uncompressed: true`, the uncompressed copy is deleted afterwards.
+
+### Restricting the export with `output.fields`
+
+`output.fields` is a single, global filter applied to **all** the datasets above. Leave it empty (or
+omit it) to export everything. The names it matches are Saveable column names in
+`<ClassName>.<variable_name>` form, for example:
+
+```yaml
+output:
+  fields:
+    - Cell_Selection_SSB.best_serving_cell_ID_per_ue
+    - Cell_Selection_SSB.best_server_rsrp_per_ue_dBm
+    - SINR_SSB.sinr_ue_to_cell_dB
+    - Rate_based_on_eff_CSI_RS_SINR.ue_throughput_Mbps
+    - Power_Consumption.power_consumption_per_radio_unit_kW
+```
+
+Three things to know before enabling it:
+
+- **The authoritative list of valid names is the [Saveable catalog](output-saveable/saveable-catalog.md)**,
+  which is generated from the code per preset. `config.example.yml` ships an active selection
+  drawn from it. The available keys depend on the preset and on the scenario: a key of a module that the
+  run does not instantiate matches nothing, and keys that match nothing are ignored without a warning.
+- **Index columns are always kept** — `episode_idx`, `step_idx`, and every entity id (`ue_id`,
+  `cell_id`, `ru_id`, …).
+- **Some core KPIs exist only in the NPZ archive.** The hardcoded core KPIs that are not Saveable
+  variables (for example `total_network_power_consumption_kW` or `carrier_throughput_Mbps`) are not
+  catalog entries, and in a standard run no Parquet `generic` file is written. Enable the NPZ format to
+  get them. The `fields` filter does not apply to the NPZ archive.
+
+A dataset left with nothing but index columns after filtering is not created at all.
 
 To restrict the export, list only the fields you care about under `output.fields`.
 
@@ -102,18 +169,28 @@ The YAML config lets you pick **which** scenario to run (e.g. `ITU_R_M2135_UMa`,
 - BS transmit power in dBm (`BS_tx_power_dBm`),
 - inter-site distance,
 
-are hard-coded inside `giulia/bs/bs_deployments.py`. The `Network.process()` method dispatches on the chosen `scenario_model` and calls one dedicated builder method per scenario, named with the convention:
+are hard-coded inside `giulia/bs/bs_deployments.py`. The `Network.process()` method is one long
+`if / elif` chain on the chosen `scenario_model`, and each branch calls one dedicated builder
+method named `construct_scenario_...`.
 
-```
-construct_scenario_<scenario_model>
-```
-
-For example, `construct_scenario_ITU_R_M2135_UMa`, `construct_scenario_3GPPTR38_901_5G`, `construct_scenario_3GPPTR38_901_UMi_lsc`, `construct_scenario_3GPPTR36_777_UMa_AV`, and so on for every `scenario_model` value listed in [Models](models.md).
+> **The builder name is usually, but not always, `construct_scenario_<scenario_model>`.** Roughly a
+> third of the 48 branches deviate, so do **not** guess the method name from the config value. The
+> recurring deviations:
+>
+> | `scenario_model` | Builder actually called |
+> |---|---|
+> | `..._lsc`, `..._lsc_sn`, `..._lsc_single_bs`, `..._lsc_single_sector` | `..._large_scale_calibration`, `..._large_scale_calibration_sn`, ... |
+> | `3GPPTR38_901_UMi_C_band_lsc`, `3GPPTR38_901_UMi_fr3_lsc`, `3GPPTR38_901_UPi_fr3_lsc` | `..._C_band_large_scale`, `..._fr3_large_scale` (no `_calibration`) |
+> | `3GPPTR38_901_4G5G_multilayer`, `3GPPTR38_901_4G_5G_multilayer`, ... | `construct_scenario_3GPPTR38_901_4G5G`, `..._4G_5G`, ... (no `_multilayer`) |
+> | `ITU_R_M2135_UMa_multilayer` | `construct_scenario_ITU_R_M2135_UMa_colocated_multilayer` |
+> | `3GPPTR38_811_Dense_Urban_NTN` | `construct_scenario_3GPPTR38_811_Desne_Urban_NTN` (typo in the source) |
 
 To change the base-station configuration for a given scenario:
 
 1. Open `giulia/bs/bs_deployments.py`.
-2. Grep for `construct_scenario_` followed by your scenario name (this is more robust than maintaining a list of method names here, because new scenarios are added over time).
+2. Find the `elif ... playground_model == "<your scenario_model>"` branch in `Network.process()` and
+   read the builder name off it. This is the reliable way -- searching for the method name directly
+   can fail because of the deviations above.
 3. Edit the relevant attributes inside that method: `bs_antenna_height_m`, `sector_bearing_deg`, `number_of_sectors_per_site`, `carrier_frequency_GHz`, `bandwidth_MHz`, `BS_tx_power_dBm`, etc.
 
 We recommend keeping such changes local — work on a branch, or copy the builder method under a new name and add a corresponding `scenario_model` value — so that you can always compare against the reference 3GPP / ITU values that ship with the repository.

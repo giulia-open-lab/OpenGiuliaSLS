@@ -57,7 +57,7 @@ Forks and Branches
 ------------------
 
 Everyone should have a fork of the repository. The fork is a copy of the repository in your GitHub account. You can
-know more about how to create a fork in the `Getting Started <setup-repository.html#repository-fork>`_ guide.
+know more about how to create a fork in the :doc:`Getting Started <setup-repository>` guide.
 
 **No one** should work on the ``main`` branch, not even in their fork.
 

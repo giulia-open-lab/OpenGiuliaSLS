@@ -1,15 +1,3 @@
-"""
-Created on Fri Nov 29 10:05:00 2024
-
-@author: David López Pérez
-dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
-"""
-
 import os.path
 
 from giulia import PROJ_DIR
@@ -24,7 +12,6 @@ def project_file(name: str) -> str:
         A full path with the name desired targeting the file requested.
     """
     return os.path.join(PROJ_DIR, name)
-
 
 def project_dir(name: str) -> str:
     """
@@ -41,7 +28,6 @@ def project_dir(name: str) -> str:
         os.makedirs(path)
     return path
 
-
 def outputs_dir() -> str:
     """
     Provides the directory where all outputs should be stored.
@@ -52,7 +38,6 @@ def outputs_dir() -> str:
     """
     outputs = project_dir('outputs')
     return os.path.realpath(outputs)
-
 
 def results_dir() -> str:
     """
@@ -66,7 +51,6 @@ def results_dir() -> str:
     results = os.path.join(outputs, 'results')
     return os.path.realpath(results)
 
-
 def results_file(project_name: str, file_name: str) -> str:
     """
     Provides a file path to be used as an output in an operation of a project.
@@ -75,7 +59,7 @@ def results_file(project_name: str, file_name: str) -> str:
         project_name: The name of the project that generated the result
         file_name: The name of the file to store the result into.
     Returns:
-        A full path with the name desired targeting the file requested.
+        A full path with the name desired targetting the file requested.
         It will be inside of: ``<Giulia root>/outputs/results/<project_name>/<file_name>``
     """
     results = results_dir()

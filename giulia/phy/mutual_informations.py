@@ -4,11 +4,7 @@ Created on Fri Nov  3 15:52:45 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-@author: Matteo Bernabe
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import os
@@ -21,7 +17,6 @@ import pandas as pd
 from giulia import ROOT_DIR
 from giulia.tools.tools import log_calculations_time
 from giulia.outputs.saveable import Saveable
-
 
 class Mutual_Information(Saveable):
     """
@@ -49,10 +44,12 @@ class Mutual_Information(Saveable):
         self.sinrs_array: np.ndarray = np.array([])
 
 
-    def variables_list(self) -> List[str]:
-        """List of attributes name to be saved."""
-        return ["mi_table"]
+    @property
+    def label(self) -> str: return 'ue_kpi'
 
+    def expose_variables(self) -> List[str]:
+        """List of attributes name to be saved."""
+        return []
 
     def process(self, rescheduling_us: int = -1) -> None:
         """
@@ -76,7 +73,6 @@ class Mutual_Information(Saveable):
         ##### End
         log_calculations_time('Mutual information', t_start)
 
-
     def find_closest_value(self, mi_value: float, mi_pool: np.ndarray) -> float:
         """
         Finds the closest SINR value in the SINR array for a given target mutual information value.
@@ -93,7 +89,6 @@ class Mutual_Information(Saveable):
 
         # Return the corresponding SINR value
         return self.sinrs_array[idx]
-    
 
     def calculate_effective_sinr_per_ue_mcs(
         self, PRB_ue_activity: np.ndarray, sinr_per_prb_ue_dB: np.ndarray
@@ -129,9 +124,10 @@ class Mutual_Information(Saveable):
         indices[valid_mask & (sinr_per_prb_ue_dB <= -45)] = 0   # Low SINR
 
         # Initialize a 3D mutual information array with NaN values
-        mi_per_prb_ue_mcs: np.ndarray = \
-            np.full((sinr_per_prb_ue_dB.shape[0], sinr_per_prb_ue_dB.shape[1], self.mi_table.shape[1]), 
-                    np.nan, dtype=np.single)
+        mi_per_prb_ue_mcs: np.ndarray = np.full(
+            (sinr_per_prb_ue_dB.shape[0], sinr_per_prb_ue_dB.shape[1], self.mi_table.shape[1]),
+            np.nan, dtype=np.single
+        )
 
         # Populate the mutual information array using valid indices
         valid_indices_mask: np.ndarray = indices != -100  # Mask for valid indices

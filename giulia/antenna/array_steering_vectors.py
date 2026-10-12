@@ -34,6 +34,7 @@ class Array_Steering_Vector(Saveable):
 
         ##### Input storage 
         ######################## 
+        
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj 
@@ -42,15 +43,23 @@ class Array_Steering_Vector(Saveable):
         
         
         ##### Outputs 
-        ########################           
+        ########################   
+        
+        # Placeholder to store array steering vector results. Size UE-by-antennas       
+        
         self.array_steering_vector_bAnt_to_aAnt_complex = [] 
+        #self.df_array_steering_vector_complex = []
+        
         self.example_array_steering_vector_bAnt_to_aAnt_complex_H = None
         self.example_array_steering_vector_bAnt_to_aAnt_complex_V = None
   
+
+    @property
+    def label(self) -> str: return 'ue_kpi'
     
-    def variables_list(self) -> List[str]:
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["array_steering_vector_bAnt_to_aAnt_complex"]
+        return []
 
        
     def process(self, rescheduling_us=-1): 
@@ -59,6 +68,7 @@ class Array_Steering_Vector(Saveable):
         ######################## 
         
         # Network
+        
         self.antenna_pattern_models = self.network_deployment_obj.df_ep["antenna_pattern_model"].to_numpy() 
         
         self.cell_ID = self.network_deployment_obj.df_ep["ID"].to_numpy()   
@@ -70,22 +80,25 @@ class Array_Steering_Vector(Saveable):
         self.antenna_config_dh_m = self.network_deployment_obj.df_ep["antenna_config_dh_m"].to_numpy(dtype=np.single)       
 
         # Cell antenna array
+        
         self.antenna_to_node_a_mapping = self.cell_antenna_array_structure_obj.antenna_to_node_mapping 
         self.antenna_LCS_index = self.cell_antenna_array_structure_obj.df_ep[["LCS_index_x", "LCS_index_y", "LCS_index_z"]].to_numpy(dtype=int)      
   
         # Channel characterisitics  
+        
         self.azimuths_b_to_a_degrees = self.distance_angles_ue_to_cell_obj.azimuths_b_to_a_wraparound_degrees
         self.zeniths_b_to_a_degrees = self.distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees   
         
          
         ##### Process outputs
         ########################          
-        self.array_steering_vector_bAnt_to_aAnt_complex = \
-            np.ones((1, np.size(self.ue_deployment_obj.df_ep,0), np.size(self.antenna_to_node_a_mapping) ), dtype=np.csingle) # The first dimension is a formality to cover for the PRB domain later        
+        
+        self.array_steering_vector_bAnt_to_aAnt_complex = np.ones((1, np.size(self.ue_deployment_obj.df_ep,0) , np.size(self.antenna_to_node_a_mapping) ), dtype=np.csingle) # The first dimension is a formality to cover for the PRB domain later        
        
         
         ##### Start timer
         ########################     
+       
         t_start = time.perf_counter()      
         
         
@@ -93,10 +106,13 @@ class Array_Steering_Vector(Saveable):
         ########################         
         
         # Find the set of unique antenna array models to process them independently
+        
         antenna_pattern_models_set = set(self.antenna_pattern_models) 
         
         # Process each antenna array model independently
+            
         for  antenna_pattern_model in antenna_pattern_models_set:
+            
             # Identify cells with the selected antenna array model
             mask = antenna_pattern_model ==  self.antenna_pattern_models
             
@@ -109,21 +125,36 @@ class Array_Steering_Vector(Saveable):
             zeniths_b_to_a_degrees = self.zeniths_b_to_a_degrees[:, mask]  
  
             # Calculate antenna array gains taking into account the antenna array geometry and the respective precoders. 
+            #if (cell_antenna_array_model == "3GPPTR36_814_UMa"):    
+                
+                # In this model, we are presented with the antenna pattern of the antenna array. No array gain is needed
+                
             if (antenna_pattern_model == "3GPPTR38_901"):    
+                
                 # In this model, we are presented with the antenna pattern of the antenna element and the array structure
+                
                 # The far-zone field of a uniform array of identical elements is equal to the product of the field of a single element and the array factor of that array.
                 
                 mask_antennas_of_selected_cells = np.isin(self.antenna_to_node_a_mapping, selected_cell_IDs)
-                self.array_steering_vector_bAnt_to_aAnt_complex[:,:,mask_antennas_of_selected_cells] =\
-                    self.calculate_array_steering_vectors(selected_cell_IDs, antenna_to_node_a_mapping, azimuths_b_to_a_degrees,zeniths_b_to_a_degrees)
                 
+                self.array_steering_vector_bAnt_to_aAnt_complex[:,:,mask_antennas_of_selected_cells] =\
+                    self.calculate_array_steering_vectors(selected_cell_IDs,                                                          
+                                                          antenna_to_node_a_mapping,
+                                                          azimuths_b_to_a_degrees, 
+                                                          zeniths_b_to_a_degrees)
         # Store in data frames the results as it may be useful to post process  
         ##### Save to plot
         ########################
+        
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.simulation_config_obj.project_name, 'to_plot_array_steering_vector_gains')
-            np.savez(file_name, array_steering_vector_gain_dB=tools.mW_to_dBm(np.abs(self.array_steering_vector_bAnt_to_aAnt_complex) ** 2))
+            np.savez(
+                file_name,
+                array_steering_vector_gain_dB=tools.mW_to_dBm(
+                    np.abs(self.array_steering_vector_bAnt_to_aAnt_complex) ** 2
+                )
+            )
 
             self.example_array_steering_vector(cell_index=0)        
   

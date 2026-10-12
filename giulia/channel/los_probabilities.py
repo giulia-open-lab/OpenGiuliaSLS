@@ -4,10 +4,7 @@ Created on Thu Mar 23 11:40:53 2023
 
 @author: David López Pérez
 dr.david.lopez@ieee.org 
-d.lopez@iteam.upv.es
-
-matteo.bernabe@ieee.org
-matteo.bernabe@iteam.upv.es
+d.lopez@itea.upv.es
 """
 
 import itertools
@@ -27,6 +24,8 @@ from giulia.tools.tools import log_calculations_time
 from giulia.ue.ue_deployments import UE_Deployment
 from giulia.outputs.saveable import Saveable
 
+from giulia.logger import warning
+
 class LOSProbability(Saveable):
     # Placeholder to store probability of line of sight results
     p_los_b_to_a: npt.NDArray
@@ -38,11 +37,11 @@ class LOSProbability(Saveable):
     site_id: npt.NDArray
 
     positions_b_m: npt.NDArray[np.single]
-    indoor: bool
+    indoor: npt.NDArray[np.bool_] 
 
     zeniths_b_to_a_wraparound_degrees: npt.NDArray
     distance_b_to_a_2d_m: npt.NDArray
-    d_2d_in_m: np.float64
+    d_2d_in_m: npt.NDArray[np.float64]
 
     rng: np.random.RandomState
 
@@ -58,21 +57,32 @@ class LOSProbability(Saveable):
 
         ##### Input storage 
         ########################  
+
         self.simulation_config_obj = simulation_config_obj
         self.network_deployment_obj = network_deployment_obj
         self.ue_deployment_obj = ue_deployment_obj
         self.distance_angles_ue_to_cell_obj = distance_angles_ue_to_cell_obj
 
 
-    def variables_list(self) -> List[str]:
+    @property
+    def label(self) -> str: return 'ue_kpi'
+    
+    def expose_variables(self) -> List[str]:
         """List of attributes name to be saved."""
-        return ["los_b_to_a"]
-
+        return []
 
     def process(self, rescheduling_us=-1):
 
         ##### Process inputs
         ######################## 
+
+        # Basic Check
+        if not isinstance(self.network_deployment_obj.df_ep, pd.DataFrame): raise ValueError("Error: network_deployment_obj.df_ep is not a DataFrame.")
+        if not isinstance(self.ue_deployment_obj.df_ep, pd.DataFrame): raise ValueError("Error: ue_deployment_obj.df_ep is not a DataFrame.")
+        if not isinstance(self.distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees, np.ndarray): raise ValueError("Error: distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees is not a numpy array.")
+        if not isinstance(self.distance_angles_ue_to_cell_obj.distance_b_to_a_2d_wraparound_m, np.ndarray): raise ValueError("Error: distance_angles_ue_to_cell_obj.distance_b_to_a_2d_wraparound_m is not a numpy array.")
+        if not isinstance(self.distance_angles_ue_to_cell_obj.d_2D_in_m, np.ndarray): raise ValueError("Error: distance_angles_ue_to_cell_obj.d_2D_in_m is not a numpy array.")
+       
 
         # Random numbers
         self.rng = np.random.RandomState(self.simulation_config_obj.random_seed + 0)
@@ -84,36 +94,49 @@ class LOSProbability(Saveable):
             self.site_id = self.network_deployment_obj.df_ep["site_ID"].to_numpy()
         else:
             # If we are dealing with the UE to UE case, then there is no BS_propagation_model field and we drive the LoS prob by the model 3GPPTR38_901_UMi
-            self.bs_propagation_models = pd.Series(np.repeat("3GPPTR38_901_UMi",repeats=np.size(self.network_deployment_obj.df_ep, 0),axis=0))
+            self.bs_propagation_models = pd.Series(
+                np.repeat(
+                    "3GPPTR38_901_UMi",
+                    repeats=np.size(self.network_deployment_obj.df_ep, 0),
+                    axis=0
+                )
+            )
 
         # Users deployment
         self.positions_b_m = (self.ue_deployment_obj.df_ep[["position_x_m", "position_y_m", "position_z_m"]].to_numpy(dtype=np.single))
         self.indoor = self.ue_deployment_obj.df_ep["indoor"].to_numpy(dtype=bool)
 
         # Channel characteristics
+
         self.zeniths_b_to_a_wraparound_degrees = self.distance_angles_ue_to_cell_obj.zeniths_b_to_a_wraparound_degrees
         self.distance_b_to_a_2d_m = self.distance_angles_ue_to_cell_obj.distance_b_to_a_2d_wraparound_m
         self.d_2d_in_m = self.distance_angles_ue_to_cell_obj.d_2D_in_m
 
         ##### Process outputs
         ########################   
-        self.p_los_b_to_a = np.ones((np.size(self.distance_b_to_a_2d_m, 0), np.size(self.distance_b_to_a_2d_m, 1)),dtype=np.single)
+
+        self.p_los_b_to_a = np.ones((np.size(self.distance_b_to_a_2d_m, 0), np.size(self.distance_b_to_a_2d_m, 1)),
+                                    dtype=np.single)
 
         ##### Start timer
         ######################## 
+
         t_start = time.perf_counter()
 
         ##### Switch
         ########################            
 
         # Find the set of unique LoS probability models to process them independently
+
         bs_propagation_models_set = set(self.bs_propagation_models)
         bs_fast_channel_models_set = set(self.bs_fast_channel_models)
 
         # Process each LoS probability model independently
+
         for models in itertools.product(bs_propagation_models_set, bs_fast_channel_models_set):
 
             # Identify cells with the selected LoS probability model
+
             bs_propagation_model = models[0]
             bs_fast_channel_model = models[1]
             mask = np.bitwise_and(
@@ -122,20 +145,26 @@ class LOSProbability(Saveable):
             )
 
             # To maintain correlation acorss sites: Get unique elements, indices of the first occurrences, and inverse indices 
-            unique_elements, first_indices, inverse_indices = np.unique(self.site_id[mask], return_index=True, return_inverse=True)
+
+            unique_elements, first_indices, inverse_indices = np.unique(
+                self.site_id[mask],
+                return_index=True,
+                return_inverse=True
+            )
 
             # Get 2D distances of the identified cells
+
             zeniths_b_to_a_wraparound_degrees: npt.NDArray = self.zeniths_b_to_a_wraparound_degrees[:, first_indices]
 
             distance_b_to_a_2d_m: npt.NDArray = self.distance_b_to_a_2d_m[:, first_indices]
             d_2d_in_m: npt.NDArray = self.d_2d_in_m[:, first_indices]
 
             # Calculate LoS probability
+
             los_probabilities_b_to_a: Optional[npt.NDArray] = None
 
             if bs_propagation_model == "3GPPTR38_901_UMa" and bs_fast_channel_model != "3GPPTR38_901_UMa":
                 los_probabilities_b_to_a = self.__los_prob_3gpptr38_901_uma(
-                    self.simulation_config_obj.debug_no_randomness,
                     distance_b_to_a_2d_m,
                     d_2d_in_m,
                     self.positions_b_m[:, 2]
@@ -168,18 +197,31 @@ class LOSProbability(Saveable):
             elif bs_propagation_model == "3GPPTR38_811_Dense_Urban_NTN":
                 los_probabilities_b_to_a = self.__los_prob_3gpptr38_811_dense_urban_ntn(zeniths_b_to_a_wraparound_degrees)
 
+            else:
+                warning(f"In {self.__class__.__name__} bs_propagation_model : '{bs_propagation_model}' (and bs_fast_channel_model: '{bs_fast_channel_model}') not handlded.\
+                         Setting LoS probability to 1 for all ues and all cells.")
+
             # Map back to all cells of the site using `np.take` to replicate the values according to `inverse_indices`
             if los_probabilities_b_to_a is not None:
+
+                # If no randomness is desired, set all LoS probabilities to 1
+                if self.simulation_config_obj.debug_no_randomness:
+                    los_probabilities_b_to_a = np.ones_like(los_probabilities_b_to_a, dtype=np.single)
+
                 self.p_los_b_to_a[:, mask] = np.take(los_probabilities_b_to_a, inverse_indices, axis=1)
 
         # Binary selecting whether a link is LoS or not
+
         self.los_b_to_a = self.__assign_los_based_on_plos(self.rng, self.p_los_b_to_a)
 
         # Store in data frames the results as it may be useful to post process
-        self.df_los_b_to_a = pd.DataFrame(self.los_b_to_a, columns=self.network_deployment_obj.df_ep["name"], index=self.ue_deployment_obj.df_ep["name"])
+        self.df_los_b_to_a = pd.DataFrame(self.los_b_to_a, columns=self.network_deployment_obj.df_ep["name"],
+                                          index=self.ue_deployment_obj.df_ep["name"])
+        # np.savez("debug_data_LoS_b_to_a.npz", LoS_b_to_a=self.LoS_b_to_a)
 
         ##### Save to plot
         ########################
+
         snapshot_control = Snapshot_control.get_instance()
         if self.simulation_config_obj.plot == 1 and snapshot_control.num_snapshots == 0:
             file_name = results_file(self.simulation_config_obj.project_name, 'to_plot_LoS')
@@ -189,7 +231,7 @@ class LOSProbability(Saveable):
         log_calculations_time('LoS probability', t_start)
 
         return rescheduling_us
-
+    
 
     @staticmethod
     def __assign_los_based_on_plos(rng: np.random.RandomState, p_los_b_to_a) -> npt.NDArray:
@@ -209,13 +251,13 @@ class LOSProbability(Saveable):
         # Create number of ues x number of involved cell sites LoS matrix
         rand = rng.rand(size_of_b, number_of_unique_elements_in_a)
         los_b_to_a = rand < p_los_b_to_a[:, indices]
+        # LoS = np.zeros((size_of_B,size_of_unique_A))
 
         # Allocate the respective LoS to every cell - Cells of a cell site have the same LoS
         return los_b_to_a[:, inverse]
 
-
     @staticmethod
-    def __los_prob_3gpptr38_901_uma(debug_no_randomness: bool, d_2d: npt.NDArray, d_2d_in: npt.NDArray, h_ut: npt.NDArray) -> npt.NDArray:
+    def __los_prob_3gpptr38_901_uma(d_2d: npt.NDArray, d_2d_in: npt.NDArray, h_ut: npt.NDArray) -> npt.NDArray:
 
         # Calculate d_2d_out
         d_2d_out = d_2d - d_2d_in
@@ -223,26 +265,26 @@ class LOSProbability(Saveable):
         # Initialize P_LoS results 
         p_los_b_to_a = np.ones((np.size(d_2d_out, 0), np.size(d_2d_out, 1)))
 
-        if not debug_no_randomness:
-            # Replicate the vector of UE heights in a column manner to facilitate next operation
-            h_ut_mat = h_ut[:, np.newaxis] * np.ones(np.size(d_2d_out, 1))
+        # Replicate the vector of UE heights in a column manner to facilitate next operation
+        h_ut_mat = h_ut[:, np.newaxis] * np.ones(np.size(d_2d_out, 1))
 
-            # Calculate values for distances larger than 18m
-            mask = d_2d_out > 18
-            p_los_b_to_a[mask] = 18 / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / 63) * (1 - 18 / d_2d_out[mask])
+        # Calculate values for distances larger than 18m
+        mask = d_2d_out > 18
+        p_los_b_to_a[mask] = 18 / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / 63) * (1 - 18 / d_2d_out[mask])
 
-            # Correct values for distances larger than 18m and UE heights larger than 13m
-            mask = np.logical_and(d_2d_out > 18, h_ut_mat > 13)
-            p_los_b_to_a[mask] *= \
-                1 + np.power((h_ut_mat[mask] - 13) / 10, 1.5) * 5 / 4 * np.power(d_2d_out[mask] / 100, 3) * np.exp(-1 * d_2d_out[mask] / 150)
+        # Correct values for distances larger than 18m and UE heights larger than 13m
+        mask = np.logical_and(d_2d_out > 18, h_ut_mat > 13)
+        p_los_b_to_a[mask] *= 1 + (
+                np.power((h_ut_mat[mask] - 13) / 10, 1.5) * 5 / 4 * np.power(d_2d_out[mask] / 100, 3) * np.exp(-1 * d_2d_out[mask] / 150)
+        )
 
         return np.round(p_los_b_to_a, 5)
-
 
     @staticmethod
     def __los_prob_3gpptr38_901_umi(d_2d: npt.NDArray, d_2d_in: npt.NDArray) -> npt.NDArray:
 
         # Calculate d_2d_out
+
         d_2d_out = d_2d - d_2d_in
 
         # Initialize P_LoS results 
@@ -254,7 +296,6 @@ class LOSProbability(Saveable):
 
         return np.round(p_los_b_to_a, 5)
 
-
     @staticmethod
     def __los_prob_itu_r_m2135_uma(d_out: npt.NDArray) -> npt.NDArray:
 
@@ -262,6 +303,7 @@ class LOSProbability(Saveable):
         p_los_b_to_a = np.ones((np.size(d_out, 0), np.size(d_out, 1)))
 
         # Calculate values for distances larger than 18m
+
         np.seterr(divide='ignore')
         mask = 18 / d_out < 1
         p_los_b_to_a[mask] = 18 / d_out[mask]
@@ -269,7 +311,6 @@ class LOSProbability(Saveable):
         p_los_b_to_a = p_los_b_to_a * (1 - np.exp(-1 * d_out / 63)) + np.exp(-1 * d_out / 63)
 
         return np.round(p_los_b_to_a, 5)
-
 
     @staticmethod
     def __los_prob_itu_r_m2135_umi(d_out: npt.NDArray, indoor) -> npt.NDArray:
@@ -285,8 +326,11 @@ class LOSProbability(Saveable):
 
         p_los_b_to_a = p_los_b_to_a * (1 - np.exp(-1 * d_out / 36)) + np.exp(-1 * d_out / 36)
 
-        return np.round(p_los_b_to_a, 5)
+        # Indoor UEs have PLoS = 0 Note that this code does not apply
+        # indoor_mat = np.tile(indoor, (1,np.size(d_out,1)))
+        # P_LoS_for_model[indoor_mat == 1] = 0
 
+        return np.round(p_los_b_to_a, 5)
 
     @staticmethod
     def __los_prob_3gpptr36_814_case_1(d_2d_out: npt.NDArray) -> npt.NDArray:
@@ -295,7 +339,6 @@ class LOSProbability(Saveable):
         p_los_b_to_a = np.zeros((np.size(d_2d_out, 0), np.size(d_2d_out, 1)))
 
         return np.round(p_los_b_to_a, 5)
-
 
     @staticmethod
     def __los_prob_3gpptr36_777_uma_av(d_2d_out: npt.NDArray, h_ut: npt.NDArray) -> npt.NDArray:
@@ -307,32 +350,37 @@ class LOSProbability(Saveable):
         h_ut_mat = h_ut[:, np.newaxis] * np.ones(np.size(d_2d_out, 1))
 
         ## GROUND UEs
+
         # Calculate values for distances larger than 18m
         mask = np.logical_and(h_ut_mat <= 22.5, d_2d_out > 18)
         p_los_b_to_a[mask] = 18 / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / 63) * (1 - 18 / d_2d_out[mask])
 
         # Correct values for distances larger than 18m and UE heights larger than 13m
         mask = np.logical_and(h_ut_mat <= 22.5, np.logical_and(d_2d_out > 18, h_ut_mat > 13))
-        p_los_b_to_a[mask] *= \
-            1 + np.power((h_ut_mat[mask] - 13) / 10, 1.5) * 5 / 4 * np.power(d_2d_out[mask] / 100, 3) * np.exp(-1 * d_2d_out[mask] / 150)
+        p_los_b_to_a[mask] *= 1 + (
+                np.power((h_ut_mat[mask] - 13) / 10, 1.5) * 5 / 4 * np.power(d_2d_out[mask] / 100, 3) * np.exp(-1 * d_2d_out[mask] / 150)
+        )
 
         ## AERIAL UEs from 22.5 to 100m
+
         d1 = np.ones((np.size(d_2d_out, 0), np.size(d_2d_out, 1))) * (460 * np.log10(h_ut_mat) - 700)
         d1[d1 < 18] = 18
 
-        # Calculate values for distances smaller than d1 m 
-        # Note that for distances smaller than d1, p_los = 1 from initialization, so no dedicated mask is needed
+        # Calculate values for distances smaller than d1 m
+        # mask = np.logical_and( h_ut > 22.5, np.logical_and(h_ut <= 100, d_2D_out <= d1))
+        # P_LoS_for_model[mask] = 1
 
         # Calculate values for distances larger than d1 m
         mask = np.logical_and(h_ut_mat > 22.5, np.logical_and(h_ut_mat <= 100, d_2d_out > d1))
         p1 = 4300 * np.log10(h_ut_mat[mask]) - 3800
         p_los_b_to_a[mask] = d1[mask] / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / p1) * (1 - d1[mask] / d_2d_out[mask])
 
-        ## AERIAL UEs from 100 to 300m 
-        # For h_ut > 100 m, p_los is defined as 1 in this model and is already preserved by initialization.
+        ## AERIAL UEs from 100 to 300m
+
+        # mask = np.logical_and(h_ut > 100, d_2D_out > d1)
+        # P_LoS_for_model[mask] = 1
 
         return np.round(p_los_b_to_a, 5)
-
 
     @staticmethod
     def __los_prob_3gpptr36_777_umi_av(d_2d_out: npt.NDArray, h_ut: npt.NDArray) -> npt.NDArray:
@@ -344,34 +392,41 @@ class LOSProbability(Saveable):
         h_ut_mat = h_ut[:, np.newaxis] * np.ones(np.size(d_2d_out, 1))
 
         ## GROUND UEs
+
         # Calculate values for distances larger than 18m
         mask = np.logical_and(h_ut_mat <= 22.5, d_2d_out > 18)
         p_los_b_to_a[mask] = 18 / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / 36) * (1 - 18 / d_2d_out[mask])
 
         ## AERIAL UEs from 22.5 to 100m
+
         d1 = np.ones((np.size(d_2d_out, 0), np.size(d_2d_out, 1))) * (294.05 * np.log10(h_ut_mat) - 432.94)
         d1[d1 < 18] = 18
 
+        # Calculate values for distances smaller than d1 m
+        # mask = np.logical_and( h_ut > 22.5, np.logical_and(h_ut <= 300, d_2D_out <= d1))
+        # P_LoS_for_model[mask] = 1
+
         # Calculate values for distances larger than d1 m
-        # Note that for distances smaller than d1, p_los = 1 from initialization, so no dedicated mask is needed
         mask = np.logical_and(h_ut_mat > 22.5, np.logical_and(h_ut_mat <= 300, d_2d_out > d1))
         p1 = 233.98 * np.log10(h_ut_mat[mask]) - 0.95
         p_los_b_to_a[mask] = d1[mask] / d_2d_out[mask] + np.exp(-1 * d_2d_out[mask] / p1) * (1 - d1[mask] / d_2d_out[mask])
 
         return np.round(p_los_b_to_a, 5)
 
-
     @staticmethod
     def __los_prob_3gpptr38_811_urban_ntn(zeniths_b_to_a_wraparound_degrees: npt.NDArray) -> npt.NDArray:
 
         # Initialize P_LoS results 
+
         p_los_b_to_a = np.ones((np.size(zeniths_b_to_a_wraparound_degrees, 0), np.size(zeniths_b_to_a_wraparound_degrees, 1)))
 
         # Elevation angle 
+
         elevation_b_to_a_wraparound_degrees = zeniths_b_to_a_wraparound_degrees - 90
 
         # Calculate mask for elevation range 
         # Calculate LoS probability
+
         mask = np.logical_and(elevation_b_to_a_wraparound_degrees >= 0, elevation_b_to_a_wraparound_degrees < 15)
         p_los_b_to_a[mask] = 0.246
 
@@ -401,14 +456,15 @@ class LOSProbability(Saveable):
 
         return np.round(p_los_b_to_a, 5)
 
-
     @staticmethod
     def __los_prob_3gpptr38_811_dense_urban_ntn(zeniths_b_to_a_wraparound_degrees: npt.NDArray) -> npt.NDArray:
 
         # Initialize P_LoS results 
+
         p_los_b_to_a = np.ones((np.size(zeniths_b_to_a_wraparound_degrees, 0), np.size(zeniths_b_to_a_wraparound_degrees, 1)))
 
         # Elevation angle 
+
         elevation_b_to_a_wraparound_degrees = zeniths_b_to_a_wraparound_degrees - 90
 
         # Calculate mask for elevation range 
